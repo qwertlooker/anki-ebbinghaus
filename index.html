@@ -1,0 +1,1636 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <title>Anki + 艾宾浩斯记忆助手</title>
+  <meta name="description" content="基于单页 HTML 的 Anki 风格记忆工具，支持艾宾浩斯遗忘曲线、Redis 同步、粘贴单词自动制卡与统计图表。" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg: #081124;
+      --bg-soft: rgba(16, 24, 40, 0.86);
+      --card: rgba(17, 25, 40, 0.86);
+      --card-2: rgba(26, 36, 59, 0.94);
+      --line: rgba(255, 255, 255, 0.1);
+      --text: #e8eefb;
+      --muted: #9cb0d2;
+      --primary: #5aa9ff;
+      --primary-2: #3e82ff;
+      --green: #22c55e;
+      --orange: #f59e0b;
+      --red: #ef4444;
+      --purple: #a855f7;
+      --shadow: 0 18px 40px rgba(2, 8, 23, 0.35);
+      --radius-xl: 24px;
+      --radius-lg: 18px;
+      --radius-md: 14px;
+      --radius-sm: 10px;
+      --maxw: 1440px;
+    }
+    * { box-sizing: border-box; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background:
+        radial-gradient(circle at top left, rgba(90,169,255,0.18), transparent 28%),
+        radial-gradient(circle at top right, rgba(168,85,247,0.16), transparent 24%),
+        linear-gradient(180deg, #081124 0%, #0f172a 100%);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      min-height: 100%;
+    }
+    body {
+      padding: 16px;
+    }
+    a { color: inherit; }
+    button, input, textarea, select {
+      font: inherit;
+    }
+    .app {
+      max-width: var(--maxw);
+      margin: 0 auto;
+      display: grid;
+      gap: 16px;
+    }
+    .glass {
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      background: var(--card);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+    .topbar {
+      display: grid;
+      grid-template-columns: 1.6fr 1fr;
+      gap: 16px;
+      padding: 18px;
+      border-radius: var(--radius-xl);
+    }
+    .brand h1 {
+      margin: 0;
+      font-size: clamp(24px, 4vw, 36px);
+      line-height: 1.1;
+    }
+    .brand p {
+      color: var(--muted);
+      margin: 10px 0 0;
+      line-height: 1.65;
+      max-width: 68ch;
+    }
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 16px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(255,255,255,0.12);
+      color: var(--muted);
+      background: rgba(255,255,255,0.03);
+      font-size: 13px;
+    }
+    .status-card {
+      padding: 16px;
+      border-radius: var(--radius-xl);
+      display: grid;
+      gap: 12px;
+      align-content: start;
+    }
+    .status-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: center;
+      padding: 12px 14px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 14px;
+    }
+    .status-row .label { color: var(--muted); font-size: 13px; }
+    .status-row .value { font-weight: 700; }
+    .layout {
+      display: grid;
+      grid-template-columns: 340px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+    .sidebar, .main, .study-shell, .panel {
+      border-radius: var(--radius-xl);
+    }
+    .sidebar {
+      padding: 16px;
+      position: sticky;
+      top: 16px;
+      display: grid;
+      gap: 14px;
+    }
+    .menu {
+      display: grid;
+      gap: 10px;
+    }
+    .menu button {
+      width: 100%;
+      text-align: left;
+      background: rgba(255,255,255,0.02);
+      color: var(--text);
+      border: 1px solid rgba(255,255,255,0.08);
+      padding: 14px 16px;
+      border-radius: 14px;
+      cursor: pointer;
+      transition: 0.2s ease;
+    }
+    .menu button.active, .menu button:hover {
+      background: rgba(90,169,255,0.12);
+      border-color: rgba(90,169,255,0.45);
+      transform: translateY(-1px);
+    }
+    .menu small { display: block; color: var(--muted); margin-top: 4px; }
+    .quick-stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .stat-tile {
+      padding: 14px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .stat-tile .k { color: var(--muted); font-size: 12px; }
+    .stat-tile .v { font-size: 24px; font-weight: 700; margin-top: 6px; }
+    .main {
+      display: grid;
+      gap: 16px;
+    }
+    .panel {
+      padding: 18px;
+    }
+    .panel h2, .panel h3 {
+      margin: 0 0 12px;
+      line-height: 1.2;
+    }
+    .panel p.note, .muted, .small-note {
+      color: var(--muted);
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+    .field label {
+      color: var(--muted);
+      font-size: 13px;
+    }
+    input, textarea, select {
+      width: 100%;
+      border: 1px solid rgba(255,255,255,0.11);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      border-radius: 12px;
+      padding: 12px 14px;
+      outline: none;
+    }
+    textarea {
+      min-height: 112px;
+      resize: vertical;
+      line-height: 1.5;
+    }
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .btn {
+      appearance: none;
+      border: 1px solid transparent;
+      background: linear-gradient(135deg, var(--primary), var(--primary-2));
+      color: white;
+      padding: 12px 16px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 700;
+      transition: 0.2s ease;
+      box-shadow: 0 10px 20px rgba(62,130,255,0.24);
+    }
+    .btn:hover { transform: translateY(-1px); }
+    .btn.secondary {
+      background: rgba(255,255,255,0.04);
+      box-shadow: none;
+      border-color: rgba(255,255,255,0.1);
+      color: var(--text);
+    }
+    .btn.warn {
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+    }
+    .btn.success {
+      background: linear-gradient(135deg, #22c55e, #16a34a);
+    }
+    .btn.ghost {
+      background: transparent;
+      box-shadow: none;
+      border-color: rgba(255,255,255,0.12);
+      color: var(--muted);
+    }
+    .sync-log {
+      max-height: 160px;
+      overflow: auto;
+      padding-right: 4px;
+      display: grid;
+      gap: 8px;
+    }
+    .log-item {
+      padding: 10px 12px;
+      border-radius: 12px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      font-size: 13px;
+      color: var(--muted);
+    }
+    .study-shell {
+      display: grid;
+      gap: 14px;
+    }
+    .study-card {
+      min-height: 300px;
+      border-radius: var(--radius-xl);
+      padding: 22px;
+      display: grid;
+      gap: 16px;
+      background:
+        radial-gradient(circle at top right, rgba(90,169,255,0.18), transparent 22%),
+        linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.02));
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .study-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 7px 10px;
+      font-size: 12px;
+      color: var(--muted);
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.04);
+    }
+    .study-front {
+      font-size: clamp(20px, 4vw, 34px);
+      font-weight: 800;
+      line-height: 1.35;
+      white-space: pre-wrap;
+    }
+    .study-back {
+      white-space: pre-wrap;
+      line-height: 1.75;
+      color: #dce6fb;
+      font-size: 15px;
+      padding: 14px 16px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .rate-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .rate-btn {
+      padding: 14px 10px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.12);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      cursor: pointer;
+      font-weight: 700;
+      min-height: 68px;
+    }
+    .rate-btn span {
+      display: block;
+      color: var(--muted);
+      font-weight: 500;
+      margin-top: 4px;
+      font-size: 12px;
+    }
+    .list {
+      display: grid;
+      gap: 10px;
+      max-height: 700px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .list-card {
+      padding: 14px;
+      border-radius: 16px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.03);
+      display: grid;
+      gap: 10px;
+    }
+    .list-card .row {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .list-card h4 {
+      margin: 0;
+      font-size: 18px;
+      line-height: 1.4;
+    }
+    .list-card p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.65;
+      white-space: pre-wrap;
+    }
+    .mini-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .mini-actions button {
+      padding: 8px 12px;
+      border-radius: 10px;
+      border: 1px solid rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.04);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+    .chart-box {
+      padding: 16px;
+      border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.08);
+      background: rgba(255,255,255,0.03);
+      min-height: 320px;
+    }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .kpi {
+      padding: 16px;
+      border-radius: 16px;
+      background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+    .kpi .label { color: var(--muted); font-size: 12px; }
+    .kpi .value { font-size: clamp(22px, 3vw, 30px); font-weight: 800; margin-top: 6px; }
+    .empty {
+      text-align: center;
+      padding: 40px 20px;
+      color: var(--muted);
+      border: 1px dashed rgba(255,255,255,0.1);
+      border-radius: 18px;
+      background: rgba(255,255,255,0.02);
+    }
+    .danger-text { color: #fecaca; }
+    .success-text { color: #bbf7d0; }
+    .small-note { font-size: 13px; line-height: 1.65; }
+    .footer-note {
+      text-align: center;
+      color: var(--muted);
+      font-size: 13px;
+      padding-bottom: 30px;
+    }
+    @media (max-width: 1100px) {
+      .topbar,
+      .layout,
+      .chart-grid,
+      .grid-2,
+      .grid-3,
+      .kpi-grid,
+      .form-grid,
+      .rate-grid {
+        grid-template-columns: 1fr;
+      }
+      .sidebar {
+        position: static;
+      }
+      .status-card {
+        order: -1;
+      }
+    }
+    @media (max-width: 720px) {
+      body { padding: 12px; }
+      .panel, .sidebar, .topbar, .status-card, .study-card { padding: 14px; }
+      .hero-actions, .actions, .mini-actions { gap: 8px; }
+      .btn, .rate-btn { width: 100%; }
+      .quick-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .study-front { font-size: 24px; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="topbar glass">
+      <div class="brand">
+        <div class="pill">Anki 模拟记忆法 · 艾宾浩斯曲线 · Redis 同步</div>
+        <h1>碎片时间背题 / 背单词 / 突击记忆</h1>
+        <p>
+          这个单页 HTML 页面模拟 Anki 的复习体验，支持本地与 Redis 双端同步、公开词典 API 自动制卡、
+          艾宾浩斯遗忘曲线预测与真实回忆率对比，并在每天晚上 20:30 自动生成统计快照，方便查漏补缺。
+        </p>
+        <div class="hero-actions">
+          <div class="pill">移动端 / 桌面端自适配</div>
+          <div class="pill">页面打开即同步本地与 Redis</div>
+          <div class="pill">支持临时突击模式</div>
+          <div class="pill">粘贴单词自动生成卡片</div>
+        </div>
+      </div>
+      <div class="status-card glass">
+        <div class="status-row"><span class="label">同步状态</span><span class="value" id="syncStatus">未连接</span></div>
+        <div class="status-row"><span class="label">待复习数量</span><span class="value" id="dueCount">0</span></div>
+        <div class="status-row"><span class="label">总卡片数</span><span class="value" id="cardCount">0</span></div>
+        <div class="status-row"><span class="label">今日复习</span><span class="value" id="todayReviews">0</span></div>
+        <div class="status-row"><span class="label">今日新增</span><span class="value" id="todayCreated">0</span></div>
+      </div>
+    </section>
+
+    <section class="layout">
+      <aside class="sidebar glass">
+        <div>
+          <h3 style="margin:0 0 12px;">功能导航</h3>
+          <div class="menu">
+            <button class="active" data-tab="dashboard">总览<small>查看统计、趋势、记忆差异</small></button>
+            <button data-tab="study">开始复习<small>Anki 式评分与调度</small></button>
+            <button data-tab="import">导入 / 制卡<small>手动录入、粘贴单词自动制卡</small></button>
+            <button data-tab="cards">卡片管理<small>搜索、编辑、删除、重学</small></button>
+            <button data-tab="settings">Redis 设置<small>网页内填写 URL / Token</small></button>
+          </div>
+        </div>
+
+        <div>
+          <h3 style="margin:0 0 12px;">快速指标</h3>
+          <div class="quick-stats">
+            <div class="stat-tile"><div class="k">成熟卡</div><div class="v" id="matureCount">0</div></div>
+            <div class="stat-tile"><div class="k">学习中</div><div class="v" id="learningCount">0</div></div>
+            <div class="stat-tile"><div class="k">平均记忆率</div><div class="v" id="retentionAvg">0%</div></div>
+            <div class="stat-tile"><div class="k">冲刺队列</div><div class="v" id="cramCount">0</div></div>
+          </div>
+        </div>
+
+        <div>
+          <h3 style="margin:0 0 12px;">同步日志</h3>
+          <div class="sync-log" id="syncLog"></div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <section class="panel glass tab-panel" id="tab-dashboard">
+          <h2>记忆总览</h2>
+          <p class="note">系统会把你的实际复习结果与基于间隔、遗忘系数估算的艾宾浩斯预测做对比，并在每天 20:30 生成快照。</p>
+          <div class="kpi-grid">
+            <div class="kpi"><div class="label">实际回忆率</div><div class="value" id="kpiActual">0%</div></div>
+            <div class="kpi"><div class="label">预测记忆率</div><div class="value" id="kpiPredicted">0%</div></div>
+            <div class="kpi"><div class="label">差异值</div><div class="value" id="kpiDelta">0%</div></div>
+            <div class="kpi"><div class="label">今日到期</div><div class="value" id="kpiDueToday">0</div></div>
+          </div>
+          <div class="chart-grid">
+            <div class="chart-box">
+              <h3>实际回忆 vs 艾宾浩斯预测</h3>
+              <canvas id="retentionChart"></canvas>
+            </div>
+            <div class="chart-box">
+              <h3>最近 7 天学习活动</h3>
+              <canvas id="activityChart"></canvas>
+            </div>
+            <div class="chart-box">
+              <h3>卡片掌握度分布</h3>
+              <canvas id="masteryChart"></canvas>
+            </div>
+            <div class="chart-box">
+              <h3>今晚 20:30 快照预览</h3>
+              <div id="snapshotPreview" class="small-note"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel glass tab-panel" id="tab-study" style="display:none;">
+          <div class="grid-2">
+            <div>
+              <h2>开始复习</h2>
+              <p class="note">支持正常复习和临时突击。正常模式会按间隔调度，冲刺模式会优先抓出不熟和近期失败卡。</p>
+            </div>
+            <div class="actions" style="justify-content:flex-end; align-items:start;">
+              <button class="btn" id="startNormalStudyBtn">正常模式</button>
+              <button class="btn warn" id="startCramStudyBtn">冲刺模式</button>
+              <button class="btn secondary" id="syncNowBtn">立即同步</button>
+            </div>
+          </div>
+
+          <div class="study-shell">
+            <div class="study-card" id="studyCard">
+              <div class="study-meta" id="studyMeta"></div>
+              <div class="study-front" id="studyFront">点击“正常模式”或“冲刺模式”开始。</div>
+              <div class="study-back" id="studyBack" style="display:none;"></div>
+              <div class="actions">
+                <button class="btn secondary" id="showAnswerBtn" disabled>显示答案</button>
+                <button class="btn ghost" id="skipCardBtn" disabled>跳过</button>
+              </div>
+            </div>
+
+            <div class="rate-grid" id="rateGrid" style="display:none;">
+              <button class="rate-btn" data-rate="again">Again<span>1 分钟后</span></button>
+              <button class="rate-btn" data-rate="hard">Hard<span>较短间隔</span></button>
+              <button class="rate-btn" data-rate="good">Good<span>正常推进</span></button>
+              <button class="rate-btn" data-rate="easy">Easy<span>大幅延后</span></button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel glass tab-panel" id="tab-import" style="display:none;">
+          <h2>导入 / 制卡</h2>
+          <div class="grid-2">
+            <div class="panel" style="padding:0; background:transparent; border:none;">
+              <h3>手动新增卡片</h3>
+              <div class="form-grid">
+                <div class="field">
+                  <label>正面（题目 / 单词）</label>
+                  <input id="manualFront" placeholder="例如：abandon" />
+                </div>
+                <div class="field">
+                  <label>标签</label>
+                  <input id="manualTags" placeholder="例如：英语, CET6" />
+                </div>
+              </div>
+              <div class="field">
+                <label>背面（释义 / 答案 / 解析）</label>
+                <textarea id="manualBack" placeholder="输入释义、答案或解析"></textarea>
+              </div>
+              <div class="actions">
+                <button class="btn success" id="addManualCardBtn">保存卡片</button>
+                <button class="btn secondary" id="resetManualBtn">清空</button>
+              </div>
+            </div>
+
+            <div class="panel" style="padding:0; background:transparent; border:none;">
+              <h3>粘贴单词自动生成卡片</h3>
+              <p class="small-note">
+                一行一个单词，页面会调用公开词典 API 自动抓取释义、音标和例句。
+                默认使用 Free Dictionary API。若接口失败，会保留单词本身并提示补充编辑。
+              </p>
+              <div class="field">
+                <label>批量粘贴英文单词</label>
+                <textarea id="bulkWords" placeholder="abandon
+abstract
+constrain"></textarea>
+              </div>
+              <div class="actions">
+                <button class="btn" id="generateCardsBtn">自动生成卡片</button>
+                <button class="btn secondary" id="sampleWordsBtn">填入示例</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid-2" style="margin-top:16px;">
+            <div>
+              <h3>导出 / 导入</h3>
+              <div class="actions">
+                <button class="btn secondary" id="exportJsonBtn">导出 JSON</button>
+                <label class="btn secondary" style="display:inline-flex; align-items:center; justify-content:center; cursor:pointer;">
+                  导入 JSON
+                  <input type="file" id="importJsonInput" accept="application/json" style="display:none;" />
+                </label>
+              </div>
+            </div>
+            <div>
+              <h3>自动制卡结果</h3>
+              <div class="list" id="generatedList"></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel glass tab-panel" id="tab-cards" style="display:none;">
+          <div class="grid-2">
+            <div>
+              <h2>卡片管理</h2>
+              <p class="note">支持搜索、删除、重新学习和直接编辑，用于临时突击或整理知识点。</p>
+            </div>
+            <div class="field">
+              <label>搜索卡片</label>
+              <input id="searchInput" placeholder="搜索单词、答案、标签" />
+            </div>
+          </div>
+          <div id="cardsList" class="list"></div>
+        </section>
+
+        <section class="panel glass tab-panel" id="tab-settings" style="display:none;">
+          <h2>Redis 设置</h2>
+          <p class="note">在网页内填写 Redis REST URL 与 Token。推荐使用 Upstash Redis REST。页面打开和操作前后都会优先执行同步。</p>
+          <div class="form-grid">
+            <div class="field">
+              <label>Redis REST URL</label>
+              <input id="redisUrl" placeholder="https://xxxx.upstash.io" />
+            </div>
+            <div class="field">
+              <label>Redis REST Token</label>
+              <input id="redisToken" type="password" placeholder="输入 REST Token" />
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label>Redis Key</label>
+              <input id="redisKey" placeholder="anki-ebbinghaus-data" />
+            </div>
+            <div class="field">
+              <label>词典 API 基地址</label>
+              <input id="dictApiBase" placeholder="https://api.dictionaryapi.dev/api/v2/entries/en" />
+            </div>
+          </div>
+          <div class="actions">
+            <button class="btn success" id="saveSettingsBtn">保存设置</button>
+            <button class="btn secondary" id="testRedisBtn">测试 Redis</button>
+            <button class="btn secondary" id="syncSettingsBtn">保存后立即同步</button>
+          </div>
+          <p class="small-note danger-text">
+            当前方案把 Token 存在浏览器本地，适合个人使用或小范围私有部署。若要面向多人公开访问，建议改成 serverless 代理层后再暴露网页。
+          </p>
+        </section>
+      </main>
+    </section>
+
+    <div class="footer-note">单页 HTML / Redis REST / Ebbinghaus / Anki-style scheduling</div>
+  </div>
+
+  <script>
+    const STORAGE_KEY = 'anki_ebbinghaus_local_v1';
+    const SETTINGS_KEY = 'anki_ebbinghaus_settings_v1';
+    const SNAPSHOT_HOUR = 20;
+    const SNAPSHOT_MINUTE = 30;
+
+    const defaultState = () => ({
+      version: 1,
+      cards: [],
+      logs: [],
+      dailyStats: {},
+      snapshots: [],
+      lastSyncAt: null,
+      updatedAt: null,
+      createdAt: new Date().toISOString(),
+    });
+
+    const defaultSettings = () => ({
+      redisUrl: '',
+      redisToken: '',
+      redisKey: 'anki-ebbinghaus-data',
+      dictApiBase: 'https://api.dictionaryapi.dev/api/v2/entries/en',
+    });
+
+    let state = loadLocalState();
+    let settings = loadSettings();
+    let charts = {};
+    let studyQueue = [];
+    let currentStudyMode = 'normal';
+    let currentCard = null;
+    let answerVisible = false;
+
+    const els = {
+      syncStatus: document.getElementById('syncStatus'),
+      dueCount: document.getElementById('dueCount'),
+      cardCount: document.getElementById('cardCount'),
+      todayReviews: document.getElementById('todayReviews'),
+      todayCreated: document.getElementById('todayCreated'),
+      matureCount: document.getElementById('matureCount'),
+      learningCount: document.getElementById('learningCount'),
+      retentionAvg: document.getElementById('retentionAvg'),
+      cramCount: document.getElementById('cramCount'),
+      syncLog: document.getElementById('syncLog'),
+      kpiActual: document.getElementById('kpiActual'),
+      kpiPredicted: document.getElementById('kpiPredicted'),
+      kpiDelta: document.getElementById('kpiDelta'),
+      kpiDueToday: document.getElementById('kpiDueToday'),
+      snapshotPreview: document.getElementById('snapshotPreview'),
+      studyMeta: document.getElementById('studyMeta'),
+      studyFront: document.getElementById('studyFront'),
+      studyBack: document.getElementById('studyBack'),
+      showAnswerBtn: document.getElementById('showAnswerBtn'),
+      skipCardBtn: document.getElementById('skipCardBtn'),
+      rateGrid: document.getElementById('rateGrid'),
+      manualFront: document.getElementById('manualFront'),
+      manualTags: document.getElementById('manualTags'),
+      manualBack: document.getElementById('manualBack'),
+      bulkWords: document.getElementById('bulkWords'),
+      generatedList: document.getElementById('generatedList'),
+      cardsList: document.getElementById('cardsList'),
+      searchInput: document.getElementById('searchInput'),
+      redisUrl: document.getElementById('redisUrl'),
+      redisToken: document.getElementById('redisToken'),
+      redisKey: document.getElementById('redisKey'),
+      dictApiBase: document.getElementById('dictApiBase'),
+    };
+
+    init();
+
+    async function init() {
+      bindTabs();
+      bindActions();
+      hydrateSettings();
+      await openSync();
+      ensureScheduledSnapshotCatchup();
+      scheduleTonightSnapshot();
+      renderAll();
+    }
+
+    function bindTabs() {
+      document.querySelectorAll('.menu button').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.menu button').forEach((b) => b.classList.remove('active'));
+          btn.classList.add('active');
+          const tab = btn.dataset.tab;
+          document.querySelectorAll('.tab-panel').forEach((panel) => panel.style.display = 'none');
+          document.getElementById(`tab-${tab}`).style.display = 'block';
+          if (tab === 'dashboard') renderCharts();
+          if (tab === 'cards') renderCardsList();
+        });
+      });
+    }
+
+    function bindActions() {
+      document.getElementById('saveSettingsBtn').addEventListener('click', saveSettingsFromForm);
+      document.getElementById('testRedisBtn').addEventListener('click', testRedisConnection);
+      document.getElementById('syncSettingsBtn').addEventListener('click', async () => {
+        saveSettingsFromForm();
+        await fullSync('设置保存后立即同步');
+        renderAll();
+      });
+      document.getElementById('syncNowBtn').addEventListener('click', async () => {
+        await fullSync('手动点击立即同步');
+        renderAll();
+      });
+      document.getElementById('addManualCardBtn').addEventListener('click', addManualCard);
+      document.getElementById('resetManualBtn').addEventListener('click', resetManualCardForm);
+      document.getElementById('generateCardsBtn').addEventListener('click', generateCardsFromWords);
+      document.getElementById('sampleWordsBtn').addEventListener('click', () => {
+        els.bulkWords.value = 'abandon\nabstract\nconstraint\nreinforce';
+      });
+      document.getElementById('exportJsonBtn').addEventListener('click', exportJson);
+      document.getElementById('importJsonInput').addEventListener('change', importJson);
+      document.getElementById('startNormalStudyBtn').addEventListener('click', async () => {
+        await fullSync('开始正常复习前同步');
+        startStudy('normal');
+      });
+      document.getElementById('startCramStudyBtn').addEventListener('click', async () => {
+        await fullSync('开始冲刺复习前同步');
+        startStudy('cram');
+      });
+      document.getElementById('showAnswerBtn').addEventListener('click', revealAnswer);
+      document.getElementById('skipCardBtn').addEventListener('click', skipCurrentCard);
+      document.querySelectorAll('.rate-btn').forEach((btn) => {
+        btn.addEventListener('click', () => rateCurrentCard(btn.dataset.rate));
+      });
+      els.searchInput.addEventListener('input', renderCardsList);
+      window.addEventListener('focus', async () => {
+        await fullSync('窗口重新获得焦点自动同步');
+        ensureScheduledSnapshotCatchup();
+        renderAll();
+      });
+    }
+
+    async function openSync() {
+      logSync('页面打开，开始本地 / Redis 同步');
+      await fullSync('页面打开自动同步');
+    }
+
+    async function fullSync(reason = '同步') {
+      state.updatedAt = new Date().toISOString();
+      saveLocalState();
+      setSyncStatus('同步中');
+      logSync(`${reason}：准备执行同步`);
+      if (!settings.redisUrl || !settings.redisToken || !settings.redisKey) {
+        setSyncStatus('仅本地');
+        logSync('Redis 未配置，当前只使用本地缓存');
+        saveLocalState();
+        return;
+      }
+      try {
+        const remote = await fetchRemoteState();
+        const merged = mergeState(state, remote);
+        state = merged;
+        saveLocalState();
+        await pushRemoteState(state);
+        state.lastSyncAt = new Date().toISOString();
+        saveLocalState();
+        setSyncStatus('已同步');
+        logSync('本地与 Redis 同步完成');
+      } catch (err) {
+        console.error(err);
+        setSyncStatus('同步失败');
+        logSync(`同步失败：${err.message || err}`);
+      }
+    }
+
+    async function testRedisConnection() {
+      saveSettingsFromForm();
+      if (!settings.redisUrl || !settings.redisToken || !settings.redisKey) {
+        alert('请先填写 Redis URL / Token / Key');
+        return;
+      }
+      try {
+        setSyncStatus('测试中');
+        const remote = await fetchRemoteState();
+        setSyncStatus('测试成功');
+        logSync(`Redis 测试成功，远端卡片数：${remote.cards?.length || 0}`);
+      } catch (err) {
+        setSyncStatus('测试失败');
+        logSync(`Redis 测试失败：${err.message || err}`);
+        alert(`Redis 测试失败：${err.message || err}`);
+      }
+    }
+
+    function saveSettingsFromForm() {
+      settings.redisUrl = els.redisUrl.value.trim().replace(/\/$/, '');
+      settings.redisToken = els.redisToken.value.trim();
+      settings.redisKey = els.redisKey.value.trim() || 'anki-ebbinghaus-data';
+      settings.dictApiBase = els.dictApiBase.value.trim().replace(/\/$/, '') || defaultSettings().dictApiBase;
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      logSync('网页设置已保存');
+    }
+
+    function hydrateSettings() {
+      els.redisUrl.value = settings.redisUrl || '';
+      els.redisToken.value = settings.redisToken || '';
+      els.redisKey.value = settings.redisKey || 'anki-ebbinghaus-data';
+      els.dictApiBase.value = settings.dictApiBase || defaultSettings().dictApiBase;
+    }
+
+    function loadLocalState() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return defaultState();
+        const parsed = JSON.parse(raw);
+        return mergeState(defaultState(), parsed);
+      } catch {
+        return defaultState();
+      }
+    }
+
+    function saveLocalState() {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    }
+
+    function loadSettings() {
+      try {
+        const raw = localStorage.getItem(SETTINGS_KEY);
+        if (!raw) return defaultSettings();
+        return { ...defaultSettings(), ...JSON.parse(raw) };
+      } catch {
+        return defaultSettings();
+      }
+    }
+
+    async function fetchRemoteState() {
+      const key = encodeURIComponent(settings.redisKey);
+      const res = await fetch(`${settings.redisUrl}/get/${key}`, {
+        headers: {
+          Authorization: `Bearer ${settings.redisToken}`,
+        },
+      });
+      if (!res.ok) throw new Error(`GET 远端失败：${res.status}`);
+      const data = await res.json();
+      let value = data?.result;
+      if (!value) return defaultState();
+      if (Array.isArray(value)) value = value[0];
+      if (typeof value !== 'string') return defaultState();
+      try {
+        return mergeState(defaultState(), JSON.parse(value));
+      } catch {
+        return defaultState();
+      }
+    }
+
+    async function pushRemoteState(nextState) {
+      const key = encodeURIComponent(settings.redisKey);
+      const body = JSON.stringify(nextState);
+      const res = await fetch(`${settings.redisUrl}/set/${key}`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${settings.redisToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify([body]),
+      });
+      if (!res.ok) throw new Error(`SET 远端失败：${res.status}`);
+      return res.json();
+    }
+
+    function mergeState(a, b) {
+      const base = defaultState();
+      const left = { ...base, ...(a || {}) };
+      const right = { ...base, ...(b || {}) };
+      const mergedCardsMap = new Map();
+      [...(left.cards || []), ...(right.cards || [])].forEach((card) => {
+        const existing = mergedCardsMap.get(card.id);
+        if (!existing) {
+          mergedCardsMap.set(card.id, card);
+        } else {
+          const exTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+          const newTime = new Date(card.updatedAt || card.createdAt || 0).getTime();
+          if (newTime >= exTime) mergedCardsMap.set(card.id, card);
+        }
+      });
+
+      const mergedStats = { ...left.dailyStats, ...right.dailyStats };
+      const snapshotsMap = new Map();
+      [...(left.snapshots || []), ...(right.snapshots || [])].forEach((snap) => snapshotsMap.set(snap.date, snap));
+      const logs = [...(left.logs || []), ...(right.logs || [])]
+        .sort((x, y) => new Date(y.time) - new Date(x.time))
+        .slice(0, 120);
+
+      return {
+        version: 1,
+        createdAt: left.createdAt || right.createdAt || new Date().toISOString(),
+        updatedAt: newerIso(left.updatedAt, right.updatedAt),
+        lastSyncAt: newerIso(left.lastSyncAt, right.lastSyncAt),
+        cards: Array.from(mergedCardsMap.values()).sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0)),
+        dailyStats: mergedStats,
+        snapshots: Array.from(snapshotsMap.values()).sort((a, b) => a.date.localeCompare(b.date)),
+        logs,
+      };
+    }
+
+    function newerIso(a, b) {
+      if (!a) return b || null;
+      if (!b) return a || null;
+      return new Date(a) >= new Date(b) ? a : b;
+    }
+
+    function logSync(message) {
+      state.logs = state.logs || [];
+      state.logs.unshift({ time: new Date().toISOString(), message });
+      state.logs = state.logs.slice(0, 120);
+      saveLocalState();
+      renderSyncLog();
+    }
+
+    function setSyncStatus(text) {
+      els.syncStatus.textContent = text;
+    }
+
+    function createCard({ front, back, tags = [], phonetic = '', examples = [] }) {
+      const now = new Date().toISOString();
+      const card = {
+        id: crypto.randomUUID ? crypto.randomUUID() : `card_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`,
+        front,
+        back,
+        tags,
+        phonetic,
+        examples,
+        createdAt: now,
+        updatedAt: now,
+        dueAt: now,
+        intervalHours: 0,
+        easeFactor: 2.5,
+        lapses: 0,
+        reps: 0,
+        status: 'new',
+        history: [],
+      };
+      return card;
+    }
+
+    async function addManualCard() {
+      const front = els.manualFront.value.trim();
+      const back = els.manualBack.value.trim();
+      const tags = parseTags(els.manualTags.value);
+      if (!front || !back) {
+        alert('请填写正面和背面内容');
+        return;
+      }
+      await fullSync('手动新增卡片前同步');
+      const card = createCard({ front, back, tags });
+      state.cards.unshift(card);
+      touchDailyStat('created', 1);
+      state.updatedAt = new Date().toISOString();
+      saveLocalState();
+      await fullSync('手动新增卡片后同步');
+      resetManualCardForm();
+      renderAll();
+      alert('卡片已保存');
+    }
+
+    function resetManualCardForm() {
+      els.manualFront.value = '';
+      els.manualBack.value = '';
+      els.manualTags.value = '';
+    }
+
+    async function generateCardsFromWords() {
+      const words = els.bulkWords.value
+        .split(/\n|,|，|;|；/)
+        .map((x) => x.trim())
+        .filter(Boolean);
+      if (!words.length) {
+        alert('请先粘贴单词');
+        return;
+      }
+      await fullSync('批量自动制卡前同步');
+      els.generatedList.innerHTML = '<div class="empty">正在调用公开词典 API 自动生成卡片，请稍候…</div>';
+      const generated = [];
+      for (const word of words) {
+        const card = await buildWordCard(word);
+        generated.push(card);
+        state.cards.unshift(card);
+        touchDailyStat('created', 1);
+      }
+      state.updatedAt = new Date().toISOString();
+      saveLocalState();
+      await fullSync('批量自动制卡后同步');
+      renderGeneratedList(generated);
+      renderAll();
+    }
+
+    async function buildWordCard(word) {
+      const fallback = createCard({
+        front: word,
+        back: '未从公开词典接口取得完整释义，请手动补充。',
+        tags: ['auto', 'word'],
+      });
+      try {
+        const url = `${settings.dictApiBase}/${encodeURIComponent(word)}`;
+        const res = await fetch(url);
+        if (!res.ok) return fallback;
+        const data = await res.json();
+        const entry = Array.isArray(data) ? data[0] : null;
+        if (!entry) return fallback;
+        const phonetic = entry.phonetic || (entry.phonetics || []).find(Boolean)?.text || '';
+        const meanings = (entry.meanings || []).slice(0, 3);
+        const lines = [];
+        meanings.forEach((meaning, index) => {
+          const defs = (meaning.definitions || []).slice(0, 2).map((d, i) => {
+            const example = d.example ? `\n例句：${d.example}` : '';
+            return `${i + 1}. ${d.definition || ''}${example}`;
+          });
+          lines.push(`[${meaning.partOfSpeech || '词性'} ${index + 1}]\n${defs.join('\n')}`);
+        });
+        return createCard({
+          front: `${word}${phonetic ? `  ${phonetic}` : ''}`,
+          back: lines.join('\n\n') || fallback.back,
+          tags: ['auto', 'word'],
+          phonetic,
+          examples: meanings.flatMap((m) => (m.definitions || []).map((d) => d.example).filter(Boolean)).slice(0, 3),
+        });
+      } catch {
+        return fallback;
+      }
+    }
+
+    function renderGeneratedList(list) {
+      if (!list.length) {
+        els.generatedList.innerHTML = '<div class="empty">暂无生成结果</div>';
+        return;
+      }
+      els.generatedList.innerHTML = list.map((card) => `
+        <div class="list-card">
+          <h4>${escapeHtml(card.front)}</h4>
+          <p>${escapeHtml(card.back)}</p>
+        </div>
+      `).join('');
+    }
+
+    function startStudy(mode = 'normal') {
+      currentStudyMode = mode;
+      const now = Date.now();
+      if (mode === 'normal') {
+        studyQueue = state.cards
+          .filter((card) => new Date(card.dueAt || 0).getTime() <= now)
+          .sort((a, b) => new Date(a.dueAt || 0) - new Date(b.dueAt || 0));
+      } else {
+        studyQueue = state.cards
+          .filter((card) => {
+            const dueSoon = new Date(card.dueAt || 0).getTime() <= now + 12 * 60 * 60 * 1000;
+            const weak = (card.lapses || 0) >= 2 || (card.easeFactor || 2.5) < 2.2 || card.status === 'learning';
+            return dueSoon || weak;
+          })
+          .sort((a, b) => (b.lapses || 0) - (a.lapses || 0));
+      }
+      answerVisible = false;
+      loadNextCard();
+      renderAll();
+    }
+
+    function loadNextCard() {
+      currentCard = studyQueue.shift() || null;
+      answerVisible = false;
+      if (!currentCard) {
+        els.studyMeta.innerHTML = '';
+        els.studyFront.textContent = currentStudyMode === 'cram' ? '冲刺队列已经完成。' : '当前没有待复习卡片。';
+        els.studyBack.style.display = 'none';
+        els.studyBack.textContent = '';
+        els.showAnswerBtn.disabled = true;
+        els.skipCardBtn.disabled = true;
+        els.rateGrid.style.display = 'none';
+        return;
+      }
+      els.studyMeta.innerHTML = `
+        <div class="badge">模式：${currentStudyMode === 'cram' ? '冲刺' : '正常'}</div>
+        <div class="badge">状态：${cardStatusText(currentCard)}</div>
+        <div class="badge">间隔：${formatInterval(currentCard.intervalHours)}</div>
+        <div class="badge">Ease：${(currentCard.easeFactor || 2.5).toFixed(2)}</div>
+      `;
+      els.studyFront.textContent = currentCard.front;
+      els.studyBack.textContent = currentCard.back + ((currentCard.examples || []).length ? `\n\n例句：\n- ${currentCard.examples.join('\n- ')}` : '');
+      els.studyBack.style.display = 'none';
+      els.showAnswerBtn.disabled = false;
+      els.skipCardBtn.disabled = false;
+      els.rateGrid.style.display = 'none';
+    }
+
+    function revealAnswer() {
+      if (!currentCard) return;
+      answerVisible = true;
+      els.studyBack.style.display = 'block';
+      els.rateGrid.style.display = 'grid';
+    }
+
+    function skipCurrentCard() {
+      if (!currentCard) return;
+      studyQueue.push(currentCard);
+      loadNextCard();
+    }
+
+    async function rateCurrentCard(rate) {
+      if (!currentCard) return;
+      await fullSync('评分前同步');
+      const target = state.cards.find((c) => c.id === currentCard.id);
+      if (!target) return;
+      const now = new Date();
+      const baseInterval = target.intervalHours || 0;
+      let nextIntervalHours = 0;
+      let ease = target.easeFactor || 2.5;
+      target.reps = (target.reps || 0) + 1;
+
+      if (rate === 'again') {
+        target.lapses = (target.lapses || 0) + 1;
+        target.status = 'learning';
+        ease = Math.max(1.3, ease - 0.2);
+        nextIntervalHours = 1 / 60;
+      } else if (rate === 'hard') {
+        target.status = baseInterval < 24 ? 'learning' : 'review';
+        ease = Math.max(1.4, ease - 0.05);
+        nextIntervalHours = Math.max(4, baseInterval ? baseInterval * 1.2 : 8);
+      } else if (rate === 'good') {
+        target.status = baseInterval < 24 ? 'review' : 'review';
+        nextIntervalHours = baseInterval === 0 ? 10 : baseInterval < 24 ? 24 : baseInterval * ease;
+      } else if (rate === 'easy') {
+        target.status = 'review';
+        ease = Math.min(3.2, ease + 0.1);
+        nextIntervalHours = baseInterval === 0 ? 72 : baseInterval * (ease + 0.35);
+      }
+
+      target.easeFactor = Number(ease.toFixed(2));
+      target.intervalHours = Number(nextIntervalHours.toFixed(2));
+      target.dueAt = new Date(now.getTime() + nextIntervalHours * 60 * 60 * 1000).toISOString();
+      target.updatedAt = now.toISOString();
+      target.history = target.history || [];
+      target.history.push({
+        time: now.toISOString(),
+        rate,
+        predictedRetention: predictRetention(target, now),
+      });
+      target.history = target.history.slice(-80);
+
+      touchDailyStat('reviewed', 1);
+      if (rate === 'again') touchDailyStat('failed', 1);
+      if (rate === 'good' || rate === 'easy') touchDailyStat('passed', 1);
+      state.updatedAt = now.toISOString();
+      saveLocalState();
+      await fullSync('评分后同步');
+      currentCard = target;
+      loadNextCard();
+      renderAll();
+    }
+
+    function cardStatusText(card) {
+      if (card.status === 'new') return '新卡';
+      if (card.status === 'learning') return '学习中';
+      if ((card.intervalHours || 0) >= 24 * 21) return '成熟';
+      return '复习中';
+    }
+
+    function formatInterval(hours = 0) {
+      if (!hours) return '未安排';
+      if (hours < 1) return `${Math.round(hours * 60)} 分钟`;
+      if (hours < 24) return `${Math.round(hours)} 小时`;
+      return `${(hours / 24).toFixed(hours >= 24 * 7 ? 1 : 0)} 天`;
+    }
+
+    function parseTags(raw) {
+      return raw.split(/,|，/).map((x) => x.trim()).filter(Boolean);
+    }
+
+    function renderAll() {
+      renderSyncLog();
+      renderStats();
+      renderCharts();
+      renderCardsList();
+      renderStudyState();
+    }
+
+    function renderSyncLog() {
+      const items = state.logs || [];
+      if (!items.length) {
+        els.syncLog.innerHTML = '<div class="empty">暂无日志</div>';
+        return;
+      }
+      els.syncLog.innerHTML = items.slice(0, 20).map((item) => `
+        <div class="log-item">[${formatDateTime(item.time)}] ${escapeHtml(item.message)}</div>
+      `).join('');
+    }
+
+    function renderStats() {
+      const cards = state.cards || [];
+      const now = Date.now();
+      const due = cards.filter((c) => new Date(c.dueAt || 0).getTime() <= now).length;
+      const mature = cards.filter((c) => (c.intervalHours || 0) >= 24 * 21).length;
+      const learning = cards.filter((c) => c.status === 'learning' || c.status === 'new').length;
+      const cram = cards.filter((c) => (c.lapses || 0) >= 2 || (c.easeFactor || 2.5) < 2.2).length;
+      const avgRetention = cards.length ? Math.round(cards.reduce((sum, c) => sum + predictRetention(c), 0) / cards.length) : 0;
+      const today = dayKey(new Date());
+      const todayStats = state.dailyStats?.[today] || {};
+      const predicted = computePredictedAverage();
+      const actual = computeActualRetention();
+      const delta = actual - predicted;
+
+      els.dueCount.textContent = String(due);
+      els.cardCount.textContent = String(cards.length);
+      els.todayReviews.textContent = String(todayStats.reviewed || 0);
+      els.todayCreated.textContent = String(todayStats.created || 0);
+      els.matureCount.textContent = String(mature);
+      els.learningCount.textContent = String(learning);
+      els.retentionAvg.textContent = `${avgRetention}%`;
+      els.cramCount.textContent = String(cram);
+      els.kpiActual.textContent = `${actual}%`;
+      els.kpiPredicted.textContent = `${predicted}%`;
+      els.kpiDelta.textContent = `${delta > 0 ? '+' : ''}${delta}%`;
+      els.kpiDueToday.textContent = String(due);
+      els.snapshotPreview.innerHTML = buildSnapshotPreviewHtml();
+    }
+
+    function renderStudyState() {
+      if (!currentCard) {
+        els.showAnswerBtn.disabled = true;
+        els.skipCardBtn.disabled = true;
+      }
+    }
+
+    function computePredictedAverage() {
+      const cards = state.cards || [];
+      if (!cards.length) return 0;
+      return Math.round(cards.reduce((sum, c) => sum + predictRetention(c), 0) / cards.length);
+    }
+
+    function computeActualRetention() {
+      const histories = (state.cards || []).flatMap((card) => card.history || []);
+      if (!histories.length) return 0;
+      const recent = histories.slice(-120);
+      const passCount = recent.filter((h) => h.rate === 'good' || h.rate === 'easy').length;
+      return Math.round((passCount / recent.length) * 100);
+    }
+
+    function predictRetention(card, at = new Date()) {
+      const dueAt = new Date(card.dueAt || card.updatedAt || card.createdAt || at).getTime();
+      const lastTouch = card.history?.length ? new Date(card.history[card.history.length - 1].time).getTime() : new Date(card.updatedAt || card.createdAt || at).getTime();
+      const elapsedHours = Math.max(0, (new Date(at).getTime() - lastTouch) / (1000 * 60 * 60));
+      const interval = Math.max(1 / 60, card.intervalHours || Math.max(1, (dueAt - lastTouch) / (1000 * 60 * 60)) || 4);
+      const stability = Math.max(0.35, (card.easeFactor || 2.5) / 2.5);
+      const value = 100 * Math.exp(-elapsedHours / (interval * stability));
+      return Math.max(3, Math.min(100, Math.round(value)));
+    }
+
+    function buildSnapshotPreviewHtml() {
+      const tonight = new Date();
+      tonight.setHours(SNAPSHOT_HOUR, SNAPSHOT_MINUTE, 0, 0);
+      const next = tonight > new Date() ? tonight : new Date(tonight.getTime() + 24 * 60 * 60 * 1000);
+      const latest = (state.snapshots || []).slice(-1)[0];
+      return `
+        <p>下一次自动快照时间：<strong>${formatDateTime(next.toISOString())}</strong></p>
+        <p>当前预计记忆率：<strong>${computePredictedAverage()}%</strong></p>
+        <p>当前实际回忆率：<strong>${computeActualRetention()}%</strong></p>
+        <p>最近一次快照：<strong>${latest ? `${latest.date} / 实际 ${latest.actualRetention}% / 预测 ${latest.predictedRetention}%` : '暂无'}</strong></p>
+      `;
+    }
+
+    function renderCharts() {
+      renderRetentionChart();
+      renderActivityChart();
+      renderMasteryChart();
+    }
+
+    function renderRetentionChart() {
+      const ctx = document.getElementById('retentionChart');
+      const snaps = (state.snapshots || []).slice(-14);
+      const labels = snaps.map((x) => x.date.slice(5));
+      const actual = snaps.map((x) => x.actualRetention);
+      const predicted = snaps.map((x) => x.predictedRetention);
+      chartReplace('retentionChart', ctx, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            { label: '实际回忆率', data: actual, tension: 0.35 },
+            { label: '艾宾浩斯预测率', data: predicted, tension: 0.35 },
+          ],
+        },
+        options: chartOptions('百分比')
+      });
+    }
+
+    function renderActivityChart() {
+      const ctx = document.getElementById('activityChart');
+      const days = lastNDays(7);
+      const labels = days.map((d) => d.slice(5));
+      const created = days.map((d) => state.dailyStats?.[d]?.created || 0);
+      const reviewed = days.map((d) => state.dailyStats?.[d]?.reviewed || 0);
+      const dueSeries = days.map((d) => snapshotDueCount(d));
+      chartReplace('activityChart', ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [
+            { label: '新增', data: created },
+            { label: '已复习', data: reviewed },
+            { label: '到期量', data: dueSeries },
+          ],
+        },
+        options: chartOptions('数量')
+      });
+    }
+
+    function renderMasteryChart() {
+      const ctx = document.getElementById('masteryChart');
+      const groups = {
+        学习中: 0,
+        年轻卡: 0,
+        成熟卡: 0,
+        疑难卡: 0,
+      };
+      (state.cards || []).forEach((card) => {
+        if ((card.lapses || 0) >= 3) groups['疑难卡'] += 1;
+        else if (card.status === 'learning' || card.status === 'new') groups['学习中'] += 1;
+        else if ((card.intervalHours || 0) >= 24 * 21) groups['成熟卡'] += 1;
+        else groups['年轻卡'] += 1;
+      });
+      chartReplace('masteryChart', ctx, {
+        type: 'doughnut',
+        data: {
+          labels: Object.keys(groups),
+          datasets: [{ data: Object.values(groups) }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { labels: { color: '#e8eefb' } } }
+        }
+      });
+    }
+
+    function chartReplace(key, canvas, config) {
+      if (charts[key]) charts[key].destroy();
+      charts[key] = new Chart(canvas, config);
+    }
+
+    function chartOptions(yTitle) {
+      return {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { labels: { color: '#e8eefb' } }
+        },
+        scales: {
+          x: { ticks: { color: '#9cb0d2' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          y: { ticks: { color: '#9cb0d2' }, grid: { color: 'rgba(255,255,255,0.05)' }, title: { display: true, text: yTitle, color: '#9cb0d2' } }
+        }
+      };
+    }
+
+    function renderCardsList() {
+      const query = els.searchInput.value.trim().toLowerCase();
+      let cards = [...(state.cards || [])];
+      if (query) {
+        cards = cards.filter((card) => [card.front, card.back, (card.tags || []).join(',')].join('\n').toLowerCase().includes(query));
+      }
+      if (!cards.length) {
+        els.cardsList.innerHTML = '<div class="empty">没有匹配的卡片</div>';
+        return;
+      }
+      els.cardsList.innerHTML = cards.map((card) => `
+        <div class="list-card">
+          <div class="row">
+            <div>
+              <h4>${escapeHtml(card.front)}</h4>
+              <p>${escapeHtml(card.back)}</p>
+            </div>
+            <div class="study-meta">
+              <div class="badge">${cardStatusText(card)}</div>
+              <div class="badge">${formatInterval(card.intervalHours)}</div>
+              <div class="badge">到期：${formatDateTime(card.dueAt)}</div>
+            </div>
+          </div>
+          <div class="row">
+            <p>标签：${escapeHtml((card.tags || []).join(', ') || '无')}</p>
+            <div class="mini-actions">
+              <button onclick="editCard('${card.id}')">编辑</button>
+              <button onclick="resetCardProgress('${card.id}')">重学</button>
+              <button onclick="deleteCard('${card.id}')">删除</button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    window.editCard = async function editCard(id) {
+      const card = state.cards.find((c) => c.id === id);
+      if (!card) return;
+      const front = prompt('编辑正面', card.front);
+      if (front === null) return;
+      const back = prompt('编辑背面', card.back);
+      if (back === null) return;
+      const tags = prompt('编辑标签（逗号分隔）', (card.tags || []).join(','));
+      await fullSync('编辑卡片前同步');
+      card.front = front.trim() || card.front;
+      card.back = back.trim() || card.back;
+      card.tags = parseTags(tags || '');
+      card.updatedAt = new Date().toISOString();
+      saveLocalState();
+      await fullSync('编辑卡片后同步');
+      renderAll();
+    };
+
+    window.resetCardProgress = async function resetCardProgress(id) {
+      const card = state.cards.find((c) => c.id === id);
+      if (!card) return;
+      await fullSync('重学前同步');
+      card.intervalHours = 0;
+      card.easeFactor = 2.5;
+      card.lapses = 0;
+      card.reps = 0;
+      card.status = 'new';
+      card.dueAt = new Date().toISOString();
+      card.updatedAt = new Date().toISOString();
+      saveLocalState();
+      await fullSync('重学后同步');
+      renderAll();
+    };
+
+    window.deleteCard = async function deleteCard(id) {
+      if (!confirm('确定删除这张卡片吗？')) return;
+      await fullSync('删除卡片前同步');
+      state.cards = state.cards.filter((c) => c.id !== id);
+      state.updatedAt = new Date().toISOString();
+      saveLocalState();
+      await fullSync('删除卡片后同步');
+      renderAll();
+    };
+
+    function exportJson() {
+      const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `anki-ebbinghaus-${dayKey(new Date())}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    async function importJson(event) {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      const text = await file.text();
+      try {
+        const data = JSON.parse(text);
+        await fullSync('导入前同步');
+        state = mergeState(state, data);
+        state.updatedAt = new Date().toISOString();
+        saveLocalState();
+        await fullSync('导入后同步');
+        renderAll();
+        alert('导入完成');
+      } catch (err) {
+        alert(`导入失败：${err.message || err}`);
+      } finally {
+        event.target.value = '';
+      }
+    }
+
+    function touchDailyStat(field, delta) {
+      const key = dayKey(new Date());
+      state.dailyStats[key] = state.dailyStats[key] || {};
+      state.dailyStats[key][field] = (state.dailyStats[key][field] || 0) + delta;
+    }
+
+    function ensureScheduledSnapshotCatchup() {
+      const today = dayKey(new Date());
+      const now = new Date();
+      if (now.getHours() > SNAPSHOT_HOUR || (now.getHours() === SNAPSHOT_HOUR && now.getMinutes() >= SNAPSHOT_MINUTE)) {
+        const exists = (state.snapshots || []).some((x) => x.date === today);
+        if (!exists) createSnapshot(today, '补记');
+      }
+    }
+
+    function scheduleTonightSnapshot() {
+      const now = new Date();
+      const target = new Date();
+      target.setHours(SNAPSHOT_HOUR, SNAPSHOT_MINUTE, 0, 0);
+      if (target <= now) target.setDate(target.getDate() + 1);
+      const delay = target.getTime() - now.getTime();
+      setTimeout(() => {
+        createSnapshot(dayKey(new Date()), '定时');
+        scheduleTonightSnapshot();
+      }, delay);
+    }
+
+    function createSnapshot(dateKey, mode) {
+      const predictedRetention = computePredictedAverage();
+      const actualRetention = computeActualRetention();
+      const dueCount = (state.cards || []).filter((c) => new Date(c.dueAt || 0).getTime() <= Date.now()).length;
+      const snapshot = {
+        date: dateKey,
+        mode,
+        predictedRetention,
+        actualRetention,
+        dueCount,
+        totalCards: (state.cards || []).length,
+        time: new Date().toISOString(),
+      };
+      state.snapshots = (state.snapshots || []).filter((x) => x.date !== dateKey).concat(snapshot).sort((a, b) => a.date.localeCompare(b.date));
+      state.updatedAt = new Date().toISOString();
+      saveLocalState();
+      logSync(`已生成 ${dateKey} 的 ${mode} 20:30 记忆快照`);
+      fullSync('生成快照后同步');
+      renderAll();
+    }
+
+    function snapshotDueCount(dateKey) {
+      const snap = (state.snapshots || []).find((x) => x.date === dateKey);
+      return snap?.dueCount || 0;
+    }
+
+    function dayKey(date) {
+      const d = new Date(date);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    }
+
+    function formatDateTime(value) {
+      if (!value) return '未设置';
+      const d = new Date(value);
+      if (Number.isNaN(d.getTime())) return '无效时间';
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+    }
+
+    function lastNDays(n) {
+      const arr = [];
+      const now = new Date();
+      for (let i = n - 1; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        arr.push(dayKey(d));
+      }
+      return arr;
+    }
+
+    function escapeHtml(str = '') {
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;')
+        .replace(/\n/g, '<br/>');
+    }
+  </script>
+</body>
+</html>
