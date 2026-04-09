@@ -119,8 +119,13 @@
       display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 7px 10px; font-size: 12px;
       color: var(--muted); border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04);
     }
-    .study-front { font-size: clamp(20px, 4vw, 34px); font-weight: 800; line-height: 1.35; white-space: pre-wrap; }
-    .study-back { white-space: pre-wrap; line-height: 1.75; color: #dce6fb; font-size: 15px; padding: 14px 16px; border-radius: 16px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
+    .study-front { font-size: clamp(20px, 4vw, 34px); font-weight: 800; line-height: 1.35; }
+    .study-phonetic { font-size: 16px; font-weight: 400; color: var(--muted); margin-top: 6px; }
+    .study-zh-summary { font-size: 15px; font-weight: 400; color: #a5c4f7; margin-top: 4px; }
+    .study-section { margin-bottom: 10px; }
+    .study-section-header { font-weight: 700; color: var(--primary); margin-bottom: 4px; font-size: 14px; }
+    .study-section-body { line-height: 1.7; font-size: 14px; }
+    .study-back { line-height: 1.75; color: #dce6fb; font-size: 15px; padding: 14px 16px; border-radius: 16px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
     .rate-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
     .rate-btn { padding: 14px 10px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: var(--text); cursor: pointer; font-weight: 700; min-height: 68px; }
     .rate-btn span { display: block; color: var(--muted); font-weight: 500; margin-top: 4px; font-size: 12px; }
@@ -128,7 +133,7 @@
     .list-card { padding: 14px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); display: grid; gap: 10px; }
     .list-card .row { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
     .list-card h4 { margin: 0; font-size: 18px; line-height: 1.4; }
-    .list-card p { margin: 0; color: var(--muted); line-height: 1.65; white-space: pre-wrap; }
+    .list-card p { margin: 0; color: var(--muted); line-height: 1.65; }
     .mini-actions { display: flex; flex-wrap: wrap; gap: 8px; }
     .mini-actions button { padding: 8px 12px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); color: var(--text); cursor: pointer; }
     .chart-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
@@ -296,7 +301,7 @@
             </div>
             <div class="panel" style="padding:0; background:transparent; border:none;">
               <h3>粘贴单词自动生成卡片</h3>
-              <p class="small-note">一行一个单词，页面会调用公开词典 API 自动抓取英文释义、中文含义、常用组合和例句。若接口失败，会保留单词本身并提示补充编辑。</p>
+              <p class="small-note">一行一个单词，页面会调用有道词典 + Free Dictionary API 自动抓取英/美音标、中文释义、双语例句、词组搭配、词形变化和词根助记。若接口失败，会保留单词本身并提示补充编辑。</p>
               <div class="field"><label>批量粘贴英文单词</label><textarea id="bulkWords" placeholder="abandon
 abstract
 constrain"></textarea></div>
@@ -408,7 +413,7 @@ constrain"></textarea></div>
       document.getElementById('addManualCardBtn').addEventListener('click', addManualCard);
       document.getElementById('resetManualBtn').addEventListener('click', resetManualCardForm);
       document.getElementById('generateCardsBtn').addEventListener('click', generateCardsFromWords);
-      document.getElementById('sampleWordsBtn').addEventListener('click', () => { els.bulkWords.value = 'abandon\nabstract\nconstraint\nreinforce'; });
+      document.getElementById('sampleWordsBtn').addEventListener('click', () => { els.bulkWords.value = 'review\nabandon\nconstraint'; });
       document.getElementById('exportJsonBtn').addEventListener('click', exportJson);
       document.getElementById('importJsonInput').addEventListener('change', importJson);
       document.getElementById('startNormalStudyBtn').addEventListener('click', async () => { await fullSync('开始正常复习前同步'); startStudy('normal'); });
@@ -563,9 +568,9 @@ constrain"></textarea></div>
     function logSync(message) { state.logs = state.logs || []; state.logs.unshift({ time: new Date().toISOString(), message }); state.logs = state.logs.slice(0, 120); saveLocalState(); renderSyncLog(); }
     function setSyncStatus(text) { els.syncStatus.textContent = text; }
 
-    function createCard({ front, back, tags = [], phonetic = '', examples = [] }) {
+    function createCard({ front, back, tags = [], phonetic = '', examples = [], zhSummary = '', phEn = '', phAm = '' }) {
       const now = new Date().toISOString();
-      return { id: crypto.randomUUID ? crypto.randomUUID() : `card_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`, front, back, tags, phonetic, examples, createdAt: now, updatedAt: now, dueAt: now, intervalHours: 0, easeFactor: 2.5, lapses: 0, reps: 0, status: 'new', history: [] };
+      return { id: crypto.randomUUID ? crypto.randomUUID() : `card_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`, front, back, tags, phonetic, examples, zhSummary, phEn, phAm, createdAt: now, updatedAt: now, dueAt: now, intervalHours: 0, easeFactor: 2.5, lapses: 0, reps: 0, status: 'new', history: [] };
     }
 
     async function addManualCard() {
@@ -605,61 +610,162 @@ constrain"></textarea></div>
       renderAll();
     }
 
+    async function fetchWithCorsProxy(url) {
+      try {
+        const res = await fetch(url);
+        if (res.ok) return res;
+      } catch (_) {}
+      try {
+        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
+        const proxyRes = await fetch(proxyUrl);
+        if (proxyRes.ok) return proxyRes;
+      } catch (_) {}
+      return null;
+    }
+
     async function buildWordCard(word) {
       const fallback = createCard({ front: word, back: '未从公开词典接口取得完整释义，请手动补充。', tags: ['auto', 'word'] });
       try {
-        const [dictRes, zhRes, collocRes] = await Promise.allSettled([
-          fetch(`${settings.dictApiBase}/${encodeURIComponent(word)}`),
-          fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=en|zh-CN`),
-          fetch(`https://api.datamuse.com/words?rel_bga=${encodeURIComponent(word)}&max=6`)
+        const youdaoUrl = `https://dict.youdao.com/jsonapi?q=${encodeURIComponent(word)}&doctype=json&le=eng`;
+        const [youdaoRes, dictRes] = await Promise.allSettled([
+          fetchWithCorsProxy(youdaoUrl),
+          fetch(`${settings.dictApiBase}/${encodeURIComponent(word)}`)
         ]);
 
-        let phonetic = '';
-        let englishBlock = '';
+        let phEn = '', phAm = '', partsBlock = '', sentBlock = '', phraseBlock = '', exchangeBlock = '', etymologyBlock = '';
         let examples = [];
+        let phonetic = '';
+        let zhSummary = '';
+
+        if (youdaoRes.status === 'fulfilled' && youdaoRes.value && youdaoRes.value.ok) {
+          const data = await youdaoRes.value.json();
+
+          const ec = data.ec || {};
+          const wordInfo = (ec.word || [])[0] || {};
+          if (wordInfo.ukphone || wordInfo.usphone) {
+            phEn = wordInfo.ukphone || '';
+            phAm = wordInfo.usphone || '';
+            phonetic = phAm || phEn;
+          }
+
+          const trs = wordInfo.trs || [];
+          if (trs.length) {
+            const partLines = trs.map((t) => {
+              const text = (t.tr || [])[0]?.l?.i || '';
+              return text;
+            }).filter(Boolean);
+            if (partLines.length) {
+              partsBlock = partLines.join('\n');
+              zhSummary = partLines.slice(0, 2).join('  ');
+            }
+          }
+
+          const wfs = wordInfo.wfs || [];
+          if (wfs.length) {
+            const exchangeItems = wfs.map((w) => {
+              const wf = w.wf || {};
+              return wf.name && wf.value ? `${wf.name}  ${wf.value}` : '';
+            }).filter(Boolean);
+            if (exchangeItems.length) exchangeBlock = exchangeItems.join('\n');
+          }
+
+          const etym = data.etym || {};
+          const etyms = (etym.etyms || {}).zh || [];
+          if (etyms.length) {
+            const etymLines = etyms.slice(0, 2).map((e) => e.value || '').filter(Boolean);
+            if (etymLines.length) etymologyBlock = etymLines.join('\n');
+          }
+
+          const phrs = (data.phrs || {}).phrs || [];
+          if (phrs.length) {
+            const phraseLines = phrs.slice(0, 6).map((p) => {
+              const hw = p.phr?.headword?.l?.i || '';
+              const tr = (p.phr?.trs || [])[0]?.tr?.l?.i || '';
+              return hw && tr ? `${hw}  ${tr}` : '';
+            }).filter(Boolean);
+            if (phraseLines.length) phraseBlock = phraseLines.join('\n');
+          }
+
+          const sentPairs = (data.blng_sents_part || {})['sentence-pair'] || [];
+          if (sentPairs.length) {
+            const sentLines = sentPairs.slice(0, 4).map((s) => {
+              const eng = (s['sentence-eng'] || s['sentence'] || '').replace(/<[^>]+>/g, '');
+              const chn = s['sentence-translation'] || '';
+              return eng && chn ? `${eng}\n${chn}` : '';
+            }).filter(Boolean);
+            if (sentLines.length) {
+              sentBlock = sentLines.join('\n\n');
+              examples = sentPairs.slice(0, 3).map((s) => (s['sentence'] || '').replace(/<[^>]+>/g, ''));
+            }
+          }
+
+          const examType = ec.exam_type || [];
+          if (examType.length) {
+            zhSummary = zhSummary ? `${examType.join(' / ')}  ${zhSummary}` : examType.join(' / ');
+          }
+        }
+
         if (dictRes.status === 'fulfilled' && dictRes.value.ok) {
           const data = await dictRes.value.json();
           const entry = Array.isArray(data) ? data[0] : null;
           if (entry) {
-            phonetic = entry.phonetic || (entry.phonetics || []).find((x) => x && x.text)?.text || '';
-            const meanings = (entry.meanings || []).slice(0, 3);
-            const lines = [];
-            meanings.forEach((meaning, index) => {
-              const defs = (meaning.definitions || []).slice(0, 2).map((d, i) => `${i + 1}. ${d.definition || ''}${d.example ? `\n例句：${d.example}` : ''}`);
-              lines.push(`[${meaning.partOfSpeech || '词性'} ${index + 1}]\n${defs.join('\n')}`);
-            });
-            englishBlock = lines.join('\n\n');
-            examples = meanings.flatMap((m) => (m.definitions || []).map((d) => d.example).filter(Boolean)).slice(0, 3);
+            if (!phonetic) phonetic = entry.phonetic || (entry.phonetics || []).find((x) => x && x.text)?.text || '';
+            if (!phEn && !phAm) {
+              const phList = entry.phonetics || [];
+              const uk = phList.find((x) => /uk/i.test(x.audio || ''));
+              const us = phList.find((x) => /us/i.test(x.audio || ''));
+              phEn = uk?.text || '';
+              phAm = us?.text || '';
+            }
+            if (!etymologyBlock) {
+              const meanings = entry.meanings || [];
+              const etymologies = [];
+              for (const m of meanings) {
+                if (m.etymology) etymologies.push(m.etymology);
+                for (const d of (m.definitions || [])) {
+                  if (d.etymology) etymologies.push(d.etymology);
+                }
+              }
+              if (etymologies.length) etymologyBlock = etymologies.join('\n');
+            }
           }
         }
 
-        let zhBlock = '暂无中文含义';
-        if (zhRes.status === 'fulfilled' && zhRes.value.ok) {
-          const zhData = await zhRes.value.json();
-          const translated = zhData?.responseData?.translatedText?.trim();
-          if (translated) zhBlock = translated;
+        if (!partsBlock) {
+          try {
+            const sugRes = await fetchWithCorsProxy(`https://fanyi.baidu.com/sug?kw=${encodeURIComponent(word)}`);
+            if (sugRes) {
+              const sugData = await sugRes.json();
+              const items = (sugData.data || []).filter((d) => d.k?.toLowerCase() === word.toLowerCase());
+              if (items.length && items[0].v) {
+                partsBlock = items[0].v;
+                zhSummary = zhSummary || items[0].v;
+              }
+            }
+          } catch (_) {}
         }
 
-        let collocationsBlock = '暂无常用组合';
-        if (collocRes.status === 'fulfilled' && collocRes.value.ok) {
-          const collocData = await collocRes.value.json();
-          const words = Array.isArray(collocData) ? collocData.map((x) => x.word).filter(Boolean).slice(0, 6) : [];
-          if (words.length) collocationsBlock = words.join(' / ');
-        }
-
-        const sections = [
-          `【中文含义】\n${zhBlock}`,
-          `【英文释义】\n${englishBlock || '暂无英文释义'}`,
-          `【常用组合】\n${collocationsBlock}`,
-        ];
-        if (examples.length) sections.push(`【例句】\n- ${examples.join('\n- ')}`);
+        const sections = [];
+        const phLine = [];
+        if (phEn) phLine.push(`英[${phEn}]`);
+        if (phAm) phLine.push(`美[${phAm}]`);
+        if (phLine.length) sections.push(phLine.join('  '));
+        if (partsBlock) sections.push(`常见释义\n${partsBlock}`);
+        if (sentBlock) sections.push(`例句\n${sentBlock}`);
+        if (phraseBlock) sections.push(`词组\n${phraseBlock}`);
+        if (exchangeBlock) sections.push(`变形\n${exchangeBlock}`);
+        if (etymologyBlock) sections.push(`助记\n${etymologyBlock}`);
+        if (!sections.length) sections.push('暂无释义，请手动补充');
 
         return createCard({
-          front: `${word}${phonetic ? `  ${phonetic}` : ''}`,
+          front: word,
           back: sections.join('\n\n'),
           tags: ['auto', 'word'],
           phonetic,
           examples,
+          zhSummary,
+          phEn,
+          phAm,
         });
       } catch {
         return fallback;
@@ -668,7 +774,14 @@ constrain"></textarea></div>
 
     function renderGeneratedList(list) {
       if (!list.length) return els.generatedList.innerHTML = '<div class="empty">暂无生成结果</div>';
-      els.generatedList.innerHTML = list.map((card) => `<div class="list-card"><h4>${escapeHtml(card.front)}</h4><p>${escapeHtml(card.back)}</p></div>`).join('');
+      els.generatedList.innerHTML = list.map((card) => {
+        const phLine = [];
+        if (card.phEn) phLine.push(`英[${escapeHtml(card.phEn)}]`);
+        if (card.phAm) phLine.push(`美[${escapeHtml(card.phAm)}]`);
+        const phHtml = phLine.length ? `<div class="study-phonetic">${phLine.join('  ')}</div>` : '';
+        const zhHtml = card.zhSummary ? `<div class="study-zh-summary">${escapeHtml(card.zhSummary)}</div>` : '';
+        return `<div class="list-card"><h4>${escapeHtml(card.front)}${phHtml}${zhHtml}</h4><p>${escapeHtml(card.back)}</p></div>`;
+      }).join('');
     }
 
     function startStudy(mode = 'normal') {
@@ -678,6 +791,32 @@ constrain"></textarea></div>
       else studyQueue = state.cards.filter((card) => new Date(card.dueAt || 0).getTime() <= now + 12 * 60 * 60 * 1000 || (card.lapses || 0) >= 2 || (card.easeFactor || 2.5) < 2.2 || card.status === 'learning').sort((a, b) => (b.lapses || 0) - (a.lapses || 0));
       loadNextCard();
       renderAll();
+    }
+
+    function renderStudyFront(card) {
+      const word = escapeHtml(card.front || '');
+      const phLine = [];
+      if (card.phEn) phLine.push(`英[${escapeHtml(card.phEn)}]`);
+      if (card.phAm) phLine.push(`美[${escapeHtml(card.phAm)}]`);
+      const phHtml = phLine.length ? `<div class="study-phonetic">${phLine.join('  ')}</div>` : '';
+      const zhHtml = card.zhSummary ? `<div class="study-zh-summary">${escapeHtml(card.zhSummary)}</div>` : '';
+      return `${word}${phHtml}${zhHtml}`;
+    }
+
+    function renderStudyBack(card) {
+      const raw = card.back || '';
+      const sections = raw.split('\n\n');
+      return sections.map((section) => {
+        const lines = section.split('\n');
+        const firstLine = lines[0];
+        const isHeader = /^(常见释义|例句|词组|变形|助记|英\[|美\[)/.test(firstLine);
+        if (isHeader && lines.length > 1) {
+          const header = escapeHtml(firstLine);
+          const body = lines.slice(1).map((l) => escapeHtml(l)).join('<br/>');
+          return `<div class="study-section"><div class="study-section-header">${header}</div><div class="study-section-body">${body}</div></div>`;
+        }
+        return `<div class="study-section">${lines.map((l) => escapeHtml(l)).join('<br/>')}</div>`;
+      }).join('');
     }
 
     function loadNextCard() {
@@ -693,8 +832,8 @@ constrain"></textarea></div>
         return;
       }
       els.studyMeta.innerHTML = `<div class="badge">模式：${currentStudyMode === 'cram' ? '冲刺' : '正常'}</div><div class="badge">状态：${cardStatusText(currentCard)}</div><div class="badge">间隔：${formatInterval(currentCard.intervalHours)}</div><div class="badge">Ease：${(currentCard.easeFactor || 2.5).toFixed(2)}</div>`;
-      els.studyFront.textContent = currentCard.front;
-      els.studyBack.textContent = currentCard.back;
+      els.studyFront.innerHTML = renderStudyFront(currentCard);
+      els.studyBack.innerHTML = renderStudyBack(currentCard);
       els.studyBack.style.display = 'none';
       els.showAnswerBtn.disabled = false;
       els.skipCardBtn.disabled = false;
@@ -853,7 +992,14 @@ constrain"></textarea></div>
       let cards = [...(state.cards || [])];
       if (query) cards = cards.filter((card) => [card.front, card.back, (card.tags || []).join(',')].join('\n').toLowerCase().includes(query));
       if (!cards.length) return els.cardsList.innerHTML = '<div class="empty">没有匹配的卡片</div>';
-      els.cardsList.innerHTML = cards.map((card) => `<div class="list-card"><div class="row"><div><h4>${escapeHtml(card.front)}</h4><p>${escapeHtml(card.back)}</p></div><div class="study-meta"><div class="badge">${cardStatusText(card)}</div><div class="badge">${formatInterval(card.intervalHours)}</div><div class="badge">到期：${formatDateTime(card.dueAt)}</div></div></div><div class="row"><p>标签：${escapeHtml((card.tags || []).join(', ') || '无')}</p><div class="mini-actions"><button onclick="editCard('${card.id}')">编辑</button><button onclick="resetCardProgress('${card.id}')">重学</button><button onclick="deleteCard('${card.id}')">删除</button></div></div></div>`).join('');
+      els.cardsList.innerHTML = cards.map((card) => {
+        const phLine = [];
+        if (card.phEn) phLine.push(`英[${escapeHtml(card.phEn)}]`);
+        if (card.phAm) phLine.push(`美[${escapeHtml(card.phAm)}]`);
+        const phHtml = phLine.length ? `<div class="study-phonetic">${phLine.join('  ')}</div>` : '';
+        const zhHtml = card.zhSummary ? `<div class="study-zh-summary">${escapeHtml(card.zhSummary)}</div>` : '';
+        return `<div class="list-card"><div class="row"><div><h4>${escapeHtml(card.front)}${phHtml}${zhHtml}</h4><p>${escapeHtml(card.back)}</p></div><div class="study-meta"><div class="badge">${cardStatusText(card)}</div><div class="badge">${formatInterval(card.intervalHours)}</div><div class="badge">到期：${formatDateTime(card.dueAt)}</div></div></div><div class="row"><p>标签：${escapeHtml((card.tags || []).join(', ') || '无')}</p><div class="mini-actions"><button onclick="editCard('${card.id}')">编辑</button><button onclick="resetCardProgress('${card.id}')">重学</button><button onclick="deleteCard('${card.id}')">删除</button></div></div></div>`;
+      }).join('');
     }
 
     window.editCard = async function editCard(id) {
