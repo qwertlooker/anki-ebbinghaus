@@ -296,7 +296,7 @@
             </div>
             <div class="panel" style="padding:0; background:transparent; border:none;">
               <h3>粘贴单词自动生成卡片</h3>
-              <p class="small-note">一行一个单词，页面会调用公开词典 API 自动抓取释义、音标和例句。默认使用 Free Dictionary API。若接口失败，会保留单词本身并提示补充编辑。</p>
+              <p class="small-note">一行一个单词，页面会调用公开词典 API 自动抓取英文释义、中文含义、常用组合和例句。若接口失败，会保留单词本身并提示补充编辑。</p>
               <div class="field"><label>批量粘贴英文单词</label><textarea id="bulkWords" placeholder="abandon
 abstract
 constrain"></textarea></div>
@@ -338,7 +338,7 @@ constrain"></textarea></div>
           </div>
           <div class="form-grid">
             <div class="field"><label>Redis Key</label><input id="redisKey" placeholder="anki-ebbinghaus-data" /></div>
-            <div class="field"><label>词典 API 基地址</label><input id="dictApiBase" placeholder="https://api.dictionaryapi.dev/api/v2/entries/en" /></div>
+            <div class="field"><label>英文词典 API</label><input id="dictApiBase" placeholder="https://api.dictionaryapi.dev/api/v2/entries/en" /></div>
           </div>
           <div class="actions">
             <button class="btn success" id="saveSettingsBtn">保存设置</button>
@@ -608,21 +608,62 @@ constrain"></textarea></div>
     async function buildWordCard(word) {
       const fallback = createCard({ front: word, back: '未从公开词典接口取得完整释义，请手动补充。', tags: ['auto', 'word'] });
       try {
-        const url = `${settings.dictApiBase}/${encodeURIComponent(word)}`;
-        const res = await fetch(url);
-        if (!res.ok) return fallback;
-        const data = await res.json();
-        const entry = Array.isArray(data) ? data[0] : null;
-        if (!entry) return fallback;
-        const phonetic = entry.phonetic || (entry.phonetics || []).find(Boolean)?.text || '';
-        const meanings = (entry.meanings || []).slice(0, 3);
-        const lines = [];
-        meanings.forEach((meaning, index) => {
-          const defs = (meaning.definitions || []).slice(0, 2).map((d, i) => `${i + 1}. ${d.definition || ''}${d.example ? `\n例句：${d.example}` : ''}`);
-          lines.push(`[${meaning.partOfSpeech || '词性'} ${index + 1}]\n${defs.join('\n')}`);
+        const [dictRes, zhRes, collocRes] = await Promise.allSettled([
+          fetch(`${settings.dictApiBase}/${encodeURIComponent(word)}`),
+          fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=en|zh-CN`),
+          fetch(`https://api.datamuse.com/words?rel_bga=${encodeURIComponent(word)}&max=6`)
+        ]);
+
+        let phonetic = '';
+        let englishBlock = '';
+        let examples = [];
+        if (dictRes.status === 'fulfilled' && dictRes.value.ok) {
+          const data = await dictRes.value.json();
+          const entry = Array.isArray(data) ? data[0] : null;
+          if (entry) {
+            phonetic = entry.phonetic || (entry.phonetics || []).find((x) => x && x.text)?.text || '';
+            const meanings = (entry.meanings || []).slice(0, 3);
+            const lines = [];
+            meanings.forEach((meaning, index) => {
+              const defs = (meaning.definitions || []).slice(0, 2).map((d, i) => `${i + 1}. ${d.definition || ''}${d.example ? `\n例句：${d.example}` : ''}`);
+              lines.push(`[${meaning.partOfSpeech || '词性'} ${index + 1}]\n${defs.join('\n')}`);
+            });
+            englishBlock = lines.join('\n\n');
+            examples = meanings.flatMap((m) => (m.definitions || []).map((d) => d.example).filter(Boolean)).slice(0, 3);
+          }
+        }
+
+        let zhBlock = '暂无中文含义';
+        if (zhRes.status === 'fulfilled' && zhRes.value.ok) {
+          const zhData = await zhRes.value.json();
+          const translated = zhData?.responseData?.translatedText?.trim();
+          if (translated) zhBlock = translated;
+        }
+
+        let collocationsBlock = '暂无常用组合';
+        if (collocRes.status === 'fulfilled' && collocRes.value.ok) {
+          const collocData = await collocRes.value.json();
+          const words = Array.isArray(collocData) ? collocData.map((x) => x.word).filter(Boolean).slice(0, 6) : [];
+          if (words.length) collocationsBlock = words.join(' / ');
+        }
+
+        const sections = [
+          `【中文含义】\n${zhBlock}`,
+          `【英文释义】\n${englishBlock || '暂无英文释义'}`,
+          `【常用组合】\n${collocationsBlock}`,
+        ];
+        if (examples.length) sections.push(`【例句】\n- ${examples.join('\n- ')}`);
+
+        return createCard({
+          front: `${word}${phonetic ? `  ${phonetic}` : ''}`,
+          back: sections.join('\n\n'),
+          tags: ['auto', 'word'],
+          phonetic,
+          examples,
         });
-        return createCard({ front: `${word}${phonetic ? `  ${phonetic}` : ''}`, back: lines.join('\n\n') || fallback.back, tags: ['auto', 'word'], phonetic, examples: meanings.flatMap((m) => (m.definitions || []).map((d) => d.example).filter(Boolean)).slice(0, 3) });
-      } catch { return fallback; }
+      } catch {
+        return fallback;
+      }
     }
 
     function renderGeneratedList(list) {
@@ -653,7 +694,7 @@ constrain"></textarea></div>
       }
       els.studyMeta.innerHTML = `<div class="badge">模式：${currentStudyMode === 'cram' ? '冲刺' : '正常'}</div><div class="badge">状态：${cardStatusText(currentCard)}</div><div class="badge">间隔：${formatInterval(currentCard.intervalHours)}</div><div class="badge">Ease：${(currentCard.easeFactor || 2.5).toFixed(2)}</div>`;
       els.studyFront.textContent = currentCard.front;
-      els.studyBack.textContent = currentCard.back + ((currentCard.examples || []).length ? `\n\n例句：\n- ${currentCard.examples.join('\n- ')}` : '');
+      els.studyBack.textContent = currentCard.back;
       els.studyBack.style.display = 'none';
       els.showAnswerBtn.disabled = false;
       els.skipCardBtn.disabled = false;
