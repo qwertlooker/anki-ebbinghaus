@@ -302,7 +302,7 @@
             </div>
             <div class="panel" style="padding:0; background:transparent; border:none;">
               <h3>粘贴单词自动生成卡片</h3>
-              <p class="small-note">一行一个单词，页面会调用有道词典建议接口 + MyMemory翻译 + Datamuse词组API 自动抓取中文释义、词组搭配和相关词。若接口失败，会保留单词本身并提示补充编辑。</p>
+              <p class="small-note">一行一个单词。若已配置 AI API，将优先使用 AI 生成高质量卡片（含音标、释义、例句、词组、变形、助记）。否则使用有道词典 + MyMemory翻译 + Datamuse词组API 自动抓取。请在「设置」页面配置 AI API。</p>
               <div class="field"><label>批量粘贴英文单词</label><textarea id="bulkWords" placeholder="abandon
 abstract
 constrain"></textarea></div>
@@ -336,7 +336,20 @@ constrain"></textarea></div>
         </section>
 
         <section class="panel glass tab-panel" id="tab-settings" style="display:none;">
-          <h2>Redis 设置</h2>
+          <h2>设置</h2>
+          
+          <h3 style="margin-top:0;">AI 大模型设置（优先使用）</h3>
+          <p class="note">配置 AI API 后，自动制卡将优先使用 AI 生成高质量单词卡片。支持 OpenAI 兼容接口（OpenAI、DeepSeek、通义千问等）。</p>
+          <div class="form-grid">
+            <div class="field"><label>AI API 地址</label><input id="aiApiUrl" placeholder="https://api.deepseek.com/v1/chat/completions" /></div>
+            <div class="field"><label>AI API Key</label><input id="aiApiKey" type="password" placeholder="sk-xxxx" /></div>
+          </div>
+          <div class="form-grid">
+            <div class="field"><label>AI 模型名称</label><input id="aiModel" placeholder="deepseek-chat" /></div>
+            <div class="field"><label>启用 AI 制卡</label><select id="aiEnabled"><option value="1">是（优先使用 AI）</option><option value="0">否（使用词典 API）</option></select></div>
+          </div>
+          
+          <h3>Redis 设置</h3>
           <p class="note">在网页内填写 Redis REST URL 与 Token。推荐使用 Upstash Redis REST。页面打开和操作前后都会优先执行同步。</p>
           <div class="form-grid">
             <div class="field"><label>Redis REST URL</label><input id="redisUrl" placeholder="https://xxxx.upstash.io" /></div>
@@ -344,7 +357,6 @@ constrain"></textarea></div>
           </div>
           <div class="form-grid">
             <div class="field"><label>Redis Key</label><input id="redisKey" placeholder="anki-ebbinghaus-data" /></div>
-            <div class="field"><label>英文词典 API</label><input id="dictApiBase" placeholder="https://api.dictionaryapi.dev/api/v2/entries/en" /></div>
           </div>
           <div class="actions">
             <button class="btn success" id="saveSettingsBtn">保存设置</button>
@@ -364,7 +376,7 @@ constrain"></textarea></div>
     const SNAPSHOT_HOUR = 20;
     const SNAPSHOT_MINUTE = 30;
     const defaultState = () => ({ version: 1, cards: [], logs: [], dailyStats: {}, snapshots: [], lastSyncAt: null, updatedAt: null, createdAt: new Date().toISOString() });
-    const defaultSettings = () => ({ redisUrl: '', redisToken: '', redisKey: 'anki-ebbinghaus-data', dictApiBase: 'https://api.dictionaryapi.dev/api/v2/entries/en' });
+    const defaultSettings = () => ({ redisUrl: '', redisToken: '', redisKey: 'anki-ebbinghaus-data', aiApiUrl: '', aiApiKey: '', aiModel: 'deepseek-chat', aiEnabled: '1' });
 
     let state = loadLocalState();
     let settings = loadSettings();
@@ -376,7 +388,7 @@ constrain"></textarea></div>
     let currentCard = null;
 
     const els = {
-      syncStatus: document.getElementById('syncStatus'), dueCount: document.getElementById('dueCount'), cardCount: document.getElementById('cardCount'), todayReviews: document.getElementById('todayReviews'), todayCreated: document.getElementById('todayCreated'), matureCount: document.getElementById('matureCount'), learningCount: document.getElementById('learningCount'), retentionAvg: document.getElementById('retentionAvg'), cramCount: document.getElementById('cramCount'), syncLog: document.getElementById('syncLog'), kpiActual: document.getElementById('kpiActual'), kpiPredicted: document.getElementById('kpiPredicted'), kpiDelta: document.getElementById('kpiDelta'), kpiDueToday: document.getElementById('kpiDueToday'), snapshotPreview: document.getElementById('snapshotPreview'), studyMeta: document.getElementById('studyMeta'), studyFront: document.getElementById('studyFront'), studyBack: document.getElementById('studyBack'), showAnswerBtn: document.getElementById('showAnswerBtn'), skipCardBtn: document.getElementById('skipCardBtn'), rateGrid: document.getElementById('rateGrid'), manualFront: document.getElementById('manualFront'), manualTags: document.getElementById('manualTags'), manualBack: document.getElementById('manualBack'), bulkWords: document.getElementById('bulkWords'), generatedList: document.getElementById('generatedList'), cardsList: document.getElementById('cardsList'), searchInput: document.getElementById('searchInput'), redisUrl: document.getElementById('redisUrl'), redisToken: document.getElementById('redisToken'), redisKey: document.getElementById('redisKey'), dictApiBase: document.getElementById('dictApiBase')
+      syncStatus: document.getElementById('syncStatus'), dueCount: document.getElementById('dueCount'), cardCount: document.getElementById('cardCount'), todayReviews: document.getElementById('todayReviews'), todayCreated: document.getElementById('todayCreated'), matureCount: document.getElementById('matureCount'), learningCount: document.getElementById('learningCount'), retentionAvg: document.getElementById('retentionAvg'), cramCount: document.getElementById('cramCount'), syncLog: document.getElementById('syncLog'), kpiActual: document.getElementById('kpiActual'), kpiPredicted: document.getElementById('kpiPredicted'), kpiDelta: document.getElementById('kpiDelta'), kpiDueToday: document.getElementById('kpiDueToday'), snapshotPreview: document.getElementById('snapshotPreview'), studyMeta: document.getElementById('studyMeta'), studyFront: document.getElementById('studyFront'), studyBack: document.getElementById('studyBack'), showAnswerBtn: document.getElementById('showAnswerBtn'), skipCardBtn: document.getElementById('skipCardBtn'), rateGrid: document.getElementById('rateGrid'), manualFront: document.getElementById('manualFront'), manualTags: document.getElementById('manualTags'), manualBack: document.getElementById('manualBack'), bulkWords: document.getElementById('bulkWords'), generatedList: document.getElementById('generatedList'), cardsList: document.getElementById('cardsList'), searchInput: document.getElementById('searchInput'), redisUrl: document.getElementById('redisUrl'), redisToken: document.getElementById('redisToken'), redisKey: document.getElementById('redisKey'), aiApiUrl: document.getElementById('aiApiUrl'), aiApiKey: document.getElementById('aiApiKey'), aiModel: document.getElementById('aiModel'), aiEnabled: document.getElementById('aiEnabled')
     };
 
     init();
@@ -494,7 +506,10 @@ constrain"></textarea></div>
       settings.redisUrl = els.redisUrl.value.trim().replace(/\/$/, '');
       settings.redisToken = els.redisToken.value.trim();
       settings.redisKey = els.redisKey.value.trim() || 'anki-ebbinghaus-data';
-      settings.dictApiBase = els.dictApiBase.value.trim().replace(/\/$/, '') || defaultSettings().dictApiBase;
+      settings.aiApiUrl = els.aiApiUrl.value.trim().replace(/\/$/, '');
+      settings.aiApiKey = els.aiApiKey.value.trim();
+      settings.aiModel = els.aiModel.value.trim() || 'deepseek-chat';
+      settings.aiEnabled = els.aiEnabled.value;
       localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
       logSync('网页设置已保存');
     }
@@ -503,7 +518,10 @@ constrain"></textarea></div>
       els.redisUrl.value = settings.redisUrl || '';
       els.redisToken.value = settings.redisToken || '';
       els.redisKey.value = settings.redisKey || 'anki-ebbinghaus-data';
-      els.dictApiBase.value = settings.dictApiBase || defaultSettings().dictApiBase;
+      els.aiApiUrl.value = settings.aiApiUrl || '';
+      els.aiApiKey.value = settings.aiApiKey || '';
+      els.aiModel.value = settings.aiModel || 'deepseek-chat';
+      els.aiEnabled.value = settings.aiEnabled || '1';
     }
 
     function loadLocalState() {
@@ -588,38 +606,204 @@ constrain"></textarea></div>
       const tags = parseTags(els.manualTags.value);
       if (!front || !back) return alert('请填写正面和背面内容');
       await fullSync('手动新增卡片前同步');
-      state.cards.unshift(createCard({ front, back, tags }));
-      touchDailyStat('created', 1);
+      
+      const existingIndex = state.cards.findIndex(c => c.front === front);
+      if (existingIndex !== -1) {
+        const existingCard = state.cards[existingIndex];
+        existingCard.back = back;
+        existingCard.tags = tags;
+        existingCard.updatedAt = new Date().toISOString();
+        state.cards.splice(existingIndex, 1);
+        state.cards.unshift(existingCard);
+        alert('单词已存在，已更新卡片内容');
+      } else {
+        state.cards.unshift(createCard({ front, back, tags }));
+        touchDailyStat('created', 1);
+        alert('卡片已保存');
+      }
+      
       state.updatedAt = new Date().toISOString();
       saveLocalState();
       await fullSync('手动新增卡片后同步');
       resetManualCardForm();
       renderAll();
-      alert('卡片已保存');
     }
 
     function resetManualCardForm() { els.manualFront.value = ''; els.manualBack.value = ''; els.manualTags.value = ''; }
+
+    async function callAIForWordCard(word) {
+      if (!settings.aiApiUrl || !settings.aiApiKey) {
+        return null;
+      }
+      const prompt = `请为英文单词 "${word}" 生成一张学习卡片，严格按照以下 JSON 格式返回（不要包含 markdown 代码块标记）：
+
+{
+  "word": "单词",
+  "phonetic": {
+    "uk": "英式音标",
+    "us": "美式音标"
+  },
+  "translation": "中文翻译（简洁，一行）",
+  "definitions": [
+    {"pos": "词性缩写", "meaning": "中文释义"}
+  ],
+  "examples": [
+    {"en": "英文例句", "zh": "中文翻译"}
+  ],
+  "phrases": [
+    {"phrase": "词组", "meaning": "释义"}
+  ],
+  "wordForms": {
+    "plural": "复数形式",
+    "past": "过去式",
+    "pastParticiple": "过去分词",
+    "presentParticiple": "现在分词",
+    "thirdPerson": "第三人称单数"
+  },
+  "etymology": "词根词源助记（简短）"
+}
+
+要求：
+1. 音标使用 IPA 国际音标格式
+2. definitions 按词性分组，每个词性最多3个释义
+3. examples 提供2-3个地道例句
+4. phrases 提供3-5个常用词组
+5. wordForms 只填写该词实际存在的变形
+6. etymology 简洁说明词根词源，帮助记忆
+7. 所有内容必须准确、地道`;
+
+      try {
+        const res = await fetch(settings.aiApiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${settings.aiApiKey}`
+          },
+          body: JSON.stringify({
+            model: settings.aiModel || 'deepseek-chat',
+            messages: [
+              { role: 'system', content: '你是一位专业的英语词典编辑，擅长制作高质量的单词学习卡片。请严格按照要求的 JSON 格式返回，不要添加任何额外文字。' },
+              { role: 'user', content: prompt }
+            ],
+            temperature: 0.3,
+            max_tokens: 1500
+          })
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        const content = data.choices?.[0]?.message?.content?.trim();
+        if (!content) return null;
+        const jsonMatch = content.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) return null;
+        return JSON.parse(jsonMatch[0]);
+      } catch (e) {
+        console.error('AI API 调用失败:', e);
+        return null;
+      }
+    }
+
+    function formatAICardData(aiData, word) {
+      if (!aiData) return null;
+      const sections = [];
+      if (aiData.translation) {
+        sections.push(`${aiData.translation}`);
+      }
+      if (aiData.phonetic && (aiData.phonetic.uk || aiData.phonetic.us)) {
+        const phLine = [];
+        if (aiData.phonetic.uk) phLine.push(`英[${aiData.phonetic.uk}]`);
+        if (aiData.phonetic.us) phLine.push(`美[${aiData.phonetic.us}]`);
+        if (phLine.length) sections.push(phLine.join('  '));
+      }
+      if (aiData.definitions && aiData.definitions.length) {
+        const defLines = aiData.definitions.map(d => `${d.pos} ${d.meaning}`);
+        sections.push(`常见释义\n${defLines.join('\n')}`);
+      }
+      if (aiData.examples && aiData.examples.length) {
+        const exLines = aiData.examples.slice(0, 3).map(e => `${e.en}\n${e.zh}`);
+        sections.push(`例句\n${exLines.join('\n\n')}`);
+      }
+      if (aiData.phrases && aiData.phrases.length) {
+        const phLines = aiData.phrases.slice(0, 5).map(p => `${p.phrase}  ${p.meaning}`);
+        sections.push(`词组\n${phLines.join('\n')}`);
+      }
+      if (aiData.wordForms) {
+        const forms = [];
+        if (aiData.wordForms.plural) forms.push(`复数  ${aiData.wordForms.plural}`);
+        if (aiData.wordForms.past) forms.push(`过去式  ${aiData.wordForms.past}`);
+        if (aiData.wordForms.pastParticiple) forms.push(`过去分词  ${aiData.wordForms.pastParticiple}`);
+        if (aiData.wordForms.presentParticiple) forms.push(`现在分词  ${aiData.wordForms.presentParticiple}`);
+        if (aiData.wordForms.thirdPerson) forms.push(`第三人称单数  ${aiData.wordForms.thirdPerson}`);
+        if (forms.length) sections.push(`变形\n${forms.join('\n')}`);
+      }
+      if (aiData.etymology) {
+        sections.push(`助记\n${aiData.etymology}`);
+      }
+      if (!sections.length) return null;
+      return {
+        front: word,
+        back: sections.join('\n\n'),
+        tags: ['auto', 'word', 'ai'],
+        phonetic: aiData.phonetic?.us || aiData.phonetic?.uk || '',
+        examples: (aiData.examples || []).map(e => e.en),
+        zhSummary: aiData.translation || '',
+        phEn: aiData.phonetic?.uk || '',
+        phAm: aiData.phonetic?.us || ''
+      };
+    }
 
     async function generateCardsFromWords() {
       const words = els.bulkWords.value.split(/\n|,|，|;|；/).map((x) => x.trim()).filter(Boolean);
       if (!words.length) return alert('请先粘贴单词');
       await fullSync('批量自动制卡前同步');
-      els.generatedList.innerHTML = '<div class="empty">正在调用公开词典 API 自动生成卡片，请稍候…</div>';
+      const useAI = settings.aiEnabled === '1' && settings.aiApiUrl && settings.aiApiKey;
+      els.generatedList.innerHTML = `<div class="empty">正在${useAI ? '调用 AI 大模型' : '调用公开词典 API'}自动生成卡片，请稍候…</div>`;
       const generated = [];
+      const updated = [];
       for (const word of words) {
-        const card = await buildWordCard(word);
-        generated.push(card);
-        state.cards.unshift(card);
-        touchDailyStat('created', 1);
+        const existingIndex = state.cards.findIndex(c => c.front === word);
+        if (existingIndex !== -1) {
+          const existingCard = state.cards[existingIndex];
+          const newCard = await buildWordCard(word);
+          existingCard.back = newCard.back;
+          existingCard.phonetic = newCard.phonetic;
+          existingCard.examples = newCard.examples;
+          existingCard.zhSummary = newCard.zhSummary;
+          existingCard.phEn = newCard.phEn;
+          existingCard.phAm = newCard.phAm;
+          existingCard.updatedAt = new Date().toISOString();
+          state.cards.splice(existingIndex, 1);
+          state.cards.unshift(existingCard);
+          updated.push(existingCard);
+        } else {
+          const card = await buildWordCard(word);
+          generated.push(card);
+          state.cards.unshift(card);
+          touchDailyStat('created', 1);
+        }
       }
       state.updatedAt = new Date().toISOString();
       saveLocalState();
       await fullSync('批量自动制卡后同步');
-      renderGeneratedList(generated);
+      const allResults = [...updated, ...generated];
+      renderGeneratedList(allResults);
+      if (updated.length > 0) {
+        alert(`处理完成！新增 ${generated.length} 张卡片，更新 ${updated.length} 张卡片`);
+      } else {
+        alert(`处理完成！新增 ${generated.length} 张卡片`);
+      }
       renderAll();
     }
 
     async function buildWordCard(word) {
+      if (settings.aiEnabled === '1' && settings.aiApiUrl && settings.aiApiKey) {
+        const aiData = await callAIForWordCard(word);
+        if (aiData) {
+          const cardData = formatAICardData(aiData, word);
+          if (cardData) {
+            return createCard(cardData);
+          }
+        }
+      }
       const fallback = createCard({ front: word, back: '未从公开词典接口取得完整释义，请手动补充。', tags: ['auto', 'word'] });
       try {
         const [sugRes, transRes, collocRes] = await Promise.allSettled([
