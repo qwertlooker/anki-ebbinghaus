@@ -122,10 +122,11 @@
     .study-front { font-size: clamp(20px, 4vw, 34px); font-weight: 800; line-height: 1.35; }
     .study-phonetic { font-size: 16px; font-weight: 400; color: var(--muted); margin-top: 6px; }
     .study-zh-summary { font-size: 15px; font-weight: 400; color: #a5c4f7; margin-top: 4px; }
-    .study-section { margin-bottom: 10px; }
-    .study-section-header { font-weight: 700; color: var(--primary); margin-bottom: 4px; font-size: 14px; }
-    .study-section-body { line-height: 1.7; font-size: 14px; }
-    .study-back { line-height: 1.75; color: #dce6fb; font-size: 15px; padding: 14px 16px; border-radius: 16px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
+    .study-zh-main { font-size: 20px; font-weight: 700; color: #8be9fd; margin-bottom: 14px; }
+    .study-section { margin-bottom: 14px; }
+    .study-section-header { font-weight: 700; color: #ff9e7d; margin-bottom: 8px; font-size: 15px; }
+    .study-section-body { line-height: 1.8; font-size: 15px; }
+    .study-back { line-height: 1.8; color: #dce6fb; font-size: 15px; padding: 18px 20px; border-radius: 16px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
     .rate-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
     .rate-btn { padding: 14px 10px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: var(--text); cursor: pointer; font-weight: 700; min-height: 68px; }
     .rate-btn span { display: block; color: var(--muted); font-weight: 500; margin-top: 4px; font-size: 12px; }
@@ -624,40 +625,51 @@ constrain"></textarea></div>
         const [sugRes, transRes, collocRes] = await Promise.allSettled([
           fetch(`https://dict.youdao.com/suggest?q=${encodeURIComponent(word)}&le=eng&ver=2.0&doctype=json`),
           fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=en|zh-CN`),
-          fetch(`https://api.datamuse.com/words?rel_bga=${encodeURIComponent(word)}&max=6`)
+          fetch(`https://api.datamuse.com/words?rel_bga=${encodeURIComponent(word)}&max=8`)
         ]);
 
-        let phEn = '', phAm = '', partsBlock = '', sentBlock = '', phraseBlock = '', exchangeBlock = '', etymologyBlock = '';
-        let examples = [];
-        let phonetic = '';
-        let zhSummary = '';
+        let phraseBlock = '', exchangeBlock = '', zhTranslation = '';
+        let partsByPos = [];
+
+        if (transRes.status === 'fulfilled' && transRes.value.ok) {
+          const transData = await transRes.value.json();
+          const translated = transData?.responseData?.translatedText?.trim();
+          if (translated) {
+            zhTranslation = translated;
+          }
+          const matches = transData?.matches || [];
+          if (matches.length > 1) {
+            const matchLines = matches.slice(1, 6).map((m) => `${m.segment}  ${m.translation}`).filter((l) => l.includes(word));
+            if (matchLines.length) {
+              phraseBlock = matchLines.join('\n');
+            }
+          }
+        }
 
         if (sugRes.status === 'fulfilled' && sugRes.value.ok) {
           const sugData = await sugRes.value.json();
           const entries = (sugData.data?.entries || []).filter((e) => e.entry?.toLowerCase() === word.toLowerCase());
           if (entries.length && entries[0].explain) {
-            partsBlock = entries[0].explain;
-            zhSummary = entries[0].explain.split('；')[0];
+            const explainText = entries[0].explain;
+            const lines = explainText.split(/[；;]/).map((s) => s.trim()).filter(Boolean);
+            if (lines.length) {
+              partsByPos = [];
+              for (const line of lines) {
+                const posMatch = line.match(/^([a-z]+\.)\s*(.+)$/i);
+                if (posMatch) {
+                  partsByPos.push({ pos: posMatch[1], means: posMatch[2].split(/[,，]/).map((s) => s.trim()).filter(Boolean) });
+                }
+              }
+              if (!partsByPos.length) {
+                partsByPos.push({ pos: '', means: lines.map((s) => s.trim()).filter(Boolean) });
+              }
+            }
           }
-          const relatedEntries = (sugData.data?.entries || []).slice(1, 5);
+          const relatedEntries = (sugData.data?.entries || []).slice(1, 6);
           if (relatedEntries.length) {
-            const relatedLines = relatedEntries.map((e) => `${e.entry}  ${e.explain?.split('；')[0] || ''}`);
-            exchangeBlock = relatedLines.join('\n');
-          }
-        }
-
-        if (transRes.status === 'fulfilled' && transRes.value.ok) {
-          const transData = await transRes.value.json();
-          const translated = transData?.responseData?.translatedText?.trim();
-          if (translated && !partsBlock) {
-            partsBlock = translated;
-            zhSummary = translated;
-          }
-          const matches = transData?.matches || [];
-          if (matches.length > 1) {
-            const matchLines = matches.slice(1, 4).map((m) => `${m.segment}  ${m.translation}`).filter((l) => l.includes(word));
-            if (matchLines.length && !phraseBlock) {
-              phraseBlock = matchLines.join('\n');
+            const relatedLines = relatedEntries.map((e) => `${e.entry}  ${e.explain?.split(/[；;]/)[0] || ''}`).filter((l) => l.trim());
+            if (relatedLines.length) {
+              exchangeBlock = relatedLines.join('\n');
             }
           }
         }
@@ -671,24 +683,38 @@ constrain"></textarea></div>
         }
 
         const sections = [];
-        const phLine = [];
-        if (phEn) phLine.push(`英[${phEn}]`);
-        if (phAm) phLine.push(`美[${phAm}]`);
-        if (phLine.length) sections.push(phLine.join('  '));
-        if (partsBlock) sections.push(`常见释义\n${partsBlock}`);
-        if (phraseBlock) sections.push(`词组\n${phraseBlock}`);
-        if (exchangeBlock) sections.push(`相关词\n${exchangeBlock}`);
-        if (!sections.length) sections.push('暂无释义，请手动补充');
+        if (zhTranslation) {
+          sections.push(`${zhTranslation}`);
+        }
+        if (partsByPos.length) {
+          const partLines = partsByPos.map((p) => {
+            const means = (p.means || []).map((m) => m.replace(/^[a-z]+\.\s*/i, '')).slice(0, 4);
+            const posText = p.pos ? `${p.pos} ` : '';
+            return `${posText}${means.join('；')}`;
+          });
+          if (partLines.length) {
+            sections.push(`常见释义\n${partLines.join('\n')}`);
+          }
+        }
+        if (phraseBlock) {
+          sections.push(`词组\n${phraseBlock}`);
+        }
+        if (exchangeBlock) {
+          sections.push(`变形\n${exchangeBlock}`);
+        }
+        if (!sections.length) {
+          sections.push('暂无释义，请手动补充');
+        }
 
         return createCard({
           front: word,
           back: sections.join('\n\n'),
           tags: ['auto', 'word'],
-          phonetic,
-          examples,
-          zhSummary,
-          phEn,
-          phAm,
+          phonetic: '',
+          examples: [],
+          zhSummary: zhTranslation,
+          phEn: '',
+          phAm: '',
         });
       } catch {
         return fallback;
@@ -729,7 +755,7 @@ constrain"></textarea></div>
     function renderStudyBack(card) {
       const raw = card.back || '';
       const sections = raw.split('\n\n');
-      return sections.map((section) => {
+      return sections.map((section, idx) => {
         const lines = section.split('\n');
         const firstLine = lines[0];
         const isHeader = /^(常见释义|例句|词组|变形|助记|英\[|美\[)/.test(firstLine);
@@ -737,6 +763,9 @@ constrain"></textarea></div>
           const header = escapeHtml(firstLine);
           const body = lines.slice(1).map((l) => escapeHtml(l)).join('<br/>');
           return `<div class="study-section"><div class="study-section-header">${header}</div><div class="study-section-body">${body}</div></div>`;
+        }
+        if (idx === 0 && !isHeader) {
+          return `<div class="study-section"><div class="study-zh-main">${escapeHtml(firstLine)}</div></div>`;
         }
         return `<div class="study-section">${lines.map((l) => escapeHtml(l)).join('<br/>')}</div>`;
       }).join('');
