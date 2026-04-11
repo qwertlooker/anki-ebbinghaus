@@ -342,7 +342,8 @@ constrain"></textarea></div>
           <h2>设置</h2>
           
           <h3 style="margin-top:0;">AI 大模型设置（优先使用）</h3>
-          <p class="note">配置 AI API 后，自动制卡将优先使用 AI 生成高质量单词卡片。支持 OpenAI 兼容接口（OpenAI、DeepSeek、通义千问等）。</p>
+          <p class="note">配置 AI API 后，自动制卡将优先使用 AI 生成高质量单词卡片。支持 OpenAI 兼容接口。</p>
+          <p class="small-note" style="color: #ffb86c;">⚠️ 注意：DeepSeek API 支持浏览器直接调用；OpenAI、NVIDIA、通义千问等 API 因 CORS 限制，需要通过代理服务器调用。若 AI 调用失败会自动降级到词典 API。</p>
           <div class="form-grid">
             <div class="field"><label>AI API 地址</label><input id="aiApiUrl" placeholder="https://api.deepseek.com/v1/chat/completions" /></div>
             <div class="field"><label>AI API Key</label><input id="aiApiKey" type="password" placeholder="sk-xxxx" /></div>
@@ -638,6 +639,10 @@ constrain"></textarea></div>
       if (!settings.aiApiUrl || !settings.aiApiKey) {
         return null;
       }
+      let apiUrl = settings.aiApiUrl;
+      if (!apiUrl.includes('/chat/completions') && !apiUrl.includes('/completions')) {
+        apiUrl = apiUrl.replace(/\/$/, '') + '/chat/completions';
+      }
       const prompt = `请为英文单词 "${word}" 生成一张学习卡片，严格按照以下 JSON 格式返回（不要包含 markdown 代码块标记）：
 
 {
@@ -676,7 +681,7 @@ constrain"></textarea></div>
 7. 所有内容必须准确、地道`;
 
       try {
-        const res = await fetch(settings.aiApiUrl, {
+        const res = await fetch(apiUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -692,7 +697,10 @@ constrain"></textarea></div>
             max_tokens: 1500
           })
         });
-        if (!res.ok) return null;
+        if (!res.ok) {
+          console.warn(`AI API 返回错误: ${res.status} ${res.statusText}`);
+          return null;
+        }
         const data = await res.json();
         const content = data.choices?.[0]?.message?.content?.trim();
         if (!content) return null;
@@ -700,7 +708,7 @@ constrain"></textarea></div>
         if (!jsonMatch) return null;
         return JSON.parse(jsonMatch[0]);
       } catch (e) {
-        console.error('AI API 调用失败:', e);
+        console.warn('AI API 调用失败（可能是 CORS 跨域问题或网络错误）:', e.message);
         return null;
       }
     }
