@@ -537,7 +537,16 @@ constrain"></textarea></div>
 
     async function pushRemoteState(nextState) {
       const key = encodeURIComponent(settings.redisKey);
-      const body = JSON.stringify(nextState);
+      const remoteData = {
+        version: nextState.version,
+        cards: nextState.cards,
+        dailyStats: nextState.dailyStats,
+        snapshots: nextState.snapshots,
+        createdAt: nextState.createdAt,
+        updatedAt: nextState.updatedAt,
+        lastSyncAt: nextState.lastSyncAt,
+      };
+      const body = JSON.stringify(remoteData);
       const res = await fetch(`${settings.redisUrl}/set/${key}`, { method: 'POST', headers: { Authorization: `Bearer ${settings.redisToken}`, 'Content-Type': 'application/json' }, body: JSON.stringify([body]) });
       if (!res.ok) throw new Error(`SET 远端失败：${res.status}`);
       return res.json();
@@ -560,8 +569,7 @@ constrain"></textarea></div>
       const mergedStats = { ...left.dailyStats, ...right.dailyStats };
       const snapshotsMap = new Map();
       [...(left.snapshots || []), ...(right.snapshots || [])].forEach((snap) => snapshotsMap.set(snap.date, snap));
-      const logs = [...(left.logs || []), ...(right.logs || [])].sort((x, y) => new Date(y.time) - new Date(x.time)).slice(0, 120);
-      return { version: 1, createdAt: left.createdAt || right.createdAt || new Date().toISOString(), updatedAt: newerIso(left.updatedAt, right.updatedAt), lastSyncAt: newerIso(left.lastSyncAt, right.lastSyncAt), cards: Array.from(mergedCardsMap.values()).sort((a1, b1) => new Date(b1.updatedAt || 0) - new Date(a1.updatedAt || 0)), dailyStats: mergedStats, snapshots: Array.from(snapshotsMap.values()).sort((a1, b1) => a1.date.localeCompare(b1.date)), logs };
+      return { version: 1, createdAt: left.createdAt || right.createdAt || new Date().toISOString(), updatedAt: newerIso(left.updatedAt, right.updatedAt), lastSyncAt: newerIso(left.lastSyncAt, right.lastSyncAt), cards: Array.from(mergedCardsMap.values()).sort((a1, b1) => new Date(b1.updatedAt || 0) - new Date(a1.updatedAt || 0)), dailyStats: mergedStats, snapshots: Array.from(snapshotsMap.values()).sort((a1, b1) => a1.date.localeCompare(b1.date)), logs: left.logs || [] };
     }
 
     function newerIso(a, b) { if (!a) return b || null; if (!b) return a || null; return new Date(a) >= new Date(b) ? a : b; }
