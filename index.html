@@ -767,10 +767,11 @@ constrain"></textarea></div>
       if (!words.length) return alert('请先粘贴单词');
       await fullSync('批量自动制卡前同步');
       const useAI = settings.aiEnabled === '1' && settings.aiApiUrl && settings.aiApiKey;
-      els.generatedList.innerHTML = `<div class="empty">正在${useAI ? '调用 AI 大模型' : '调用公开词典 API'}自动生成卡片，请稍候…</div>`;
       const generated = [];
       const updated = [];
-      for (const word of words) {
+      for (let i = 0; i < words.length; i++) {
+        const word = words[i];
+        els.generatedList.innerHTML = `<div class="empty">正在${useAI ? '调用 AI 大模型' : '调用公开词典 API'}自动生成卡片…<br/><br/>进度：${i + 1}/${words.length} - 正在处理: <strong>${escapeHtml(word)}</strong></div>`;
         const existingIndex = state.cards.findIndex(c => c.front === word);
         if (existingIndex !== -1) {
           const existingCard = state.cards[existingIndex];
@@ -781,6 +782,7 @@ constrain"></textarea></div>
           existingCard.zhSummary = newCard.zhSummary;
           existingCard.phEn = newCard.phEn;
           existingCard.phAm = newCard.phAm;
+          existingCard.tags = newCard.tags;
           existingCard.updatedAt = new Date().toISOString();
           state.cards.splice(existingIndex, 1);
           state.cards.unshift(existingCard);
