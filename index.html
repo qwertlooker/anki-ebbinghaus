@@ -301,7 +301,7 @@
             </div>
             <div class="panel" style="padding:0; background:transparent; border:none;">
               <h3>粘贴单词自动生成卡片</h3>
-              <p class="small-note">一行一个单词，页面会调用有道词典 + Free Dictionary API 自动抓取英/美音标、中文释义、双语例句、词组搭配、词形变化和词根助记。若接口失败，会保留单词本身并提示补充编辑。</p>
+              <p class="small-note">一行一个单词，页面会调用有道词典建议接口 + MyMemory翻译 + Datamuse词组API 自动抓取中文释义、词组搭配和相关词。若接口失败，会保留单词本身并提示补充编辑。</p>
               <div class="field"><label>批量粘贴英文单词</label><textarea id="bulkWords" placeholder="abandon
 abstract
 constrain"></textarea></div>
@@ -618,26 +618,13 @@ constrain"></textarea></div>
       renderAll();
     }
 
-    async function fetchWithCorsProxy(url) {
-      try {
-        const res = await fetch(url);
-        if (res.ok) return res;
-      } catch (_) {}
-      try {
-        const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-        const proxyRes = await fetch(proxyUrl);
-        if (proxyRes.ok) return proxyRes;
-      } catch (_) {}
-      return null;
-    }
-
     async function buildWordCard(word) {
       const fallback = createCard({ front: word, back: '未从公开词典接口取得完整释义，请手动补充。', tags: ['auto', 'word'] });
       try {
-        const youdaoUrl = `https://dict.youdao.com/jsonapi?q=${encodeURIComponent(word)}&doctype=json&le=eng`;
-        const [youdaoRes, dictRes] = await Promise.allSettled([
-          fetchWithCorsProxy(youdaoUrl),
-          fetch(`${settings.dictApiBase}/${encodeURIComponent(word)}`)
+        const [sugRes, transRes, collocRes] = await Promise.allSettled([
+          fetch(`https://dict.youdao.com/suggest?q=${encodeURIComponent(word)}&le=eng&ver=2.0&doctype=json`),
+          fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=en|zh-CN`),
+          fetch(`https://api.datamuse.com/words?rel_bga=${encodeURIComponent(word)}&max=6`)
         ]);
 
         let phEn = '', phAm = '', partsBlock = '', sentBlock = '', phraseBlock = '', exchangeBlock = '', etymologyBlock = '';
@@ -645,112 +632,42 @@ constrain"></textarea></div>
         let phonetic = '';
         let zhSummary = '';
 
-        if (youdaoRes.status === 'fulfilled' && youdaoRes.value && youdaoRes.value.ok) {
-          const data = await youdaoRes.value.json();
-
-          const ec = data.ec || {};
-          const wordInfo = (ec.word || [])[0] || {};
-          if (wordInfo.ukphone || wordInfo.usphone) {
-            phEn = wordInfo.ukphone || '';
-            phAm = wordInfo.usphone || '';
-            phonetic = phAm || phEn;
+        if (sugRes.status === 'fulfilled' && sugRes.value.ok) {
+          const sugData = await sugRes.value.json();
+          const entries = (sugData.data?.entries || []).filter((e) => e.entry?.toLowerCase() === word.toLowerCase());
+          if (entries.length && entries[0].explain) {
+            partsBlock = entries[0].explain;
+            zhSummary = entries[0].explain.split('；')[0];
           }
-
-          const trs = wordInfo.trs || [];
-          if (trs.length) {
-            const partLines = trs.map((t) => {
-              const text = (t.tr || [])[0]?.l?.i || '';
-              return text;
-            }).filter(Boolean);
-            if (partLines.length) {
-              partsBlock = partLines.join('\n');
-              zhSummary = partLines.slice(0, 2).join('  ');
-            }
-          }
-
-          const wfs = wordInfo.wfs || [];
-          if (wfs.length) {
-            const exchangeItems = wfs.map((w) => {
-              const wf = w.wf || {};
-              return wf.name && wf.value ? `${wf.name}  ${wf.value}` : '';
-            }).filter(Boolean);
-            if (exchangeItems.length) exchangeBlock = exchangeItems.join('\n');
-          }
-
-          const etym = data.etym || {};
-          const etyms = (etym.etyms || {}).zh || [];
-          if (etyms.length) {
-            const etymLines = etyms.slice(0, 2).map((e) => e.value || '').filter(Boolean);
-            if (etymLines.length) etymologyBlock = etymLines.join('\n');
-          }
-
-          const phrs = (data.phrs || {}).phrs || [];
-          if (phrs.length) {
-            const phraseLines = phrs.slice(0, 6).map((p) => {
-              const hw = p.phr?.headword?.l?.i || '';
-              const tr = (p.phr?.trs || [])[0]?.tr?.l?.i || '';
-              return hw && tr ? `${hw}  ${tr}` : '';
-            }).filter(Boolean);
-            if (phraseLines.length) phraseBlock = phraseLines.join('\n');
-          }
-
-          const sentPairs = (data.blng_sents_part || {})['sentence-pair'] || [];
-          if (sentPairs.length) {
-            const sentLines = sentPairs.slice(0, 4).map((s) => {
-              const eng = (s['sentence-eng'] || s['sentence'] || '').replace(/<[^>]+>/g, '');
-              const chn = s['sentence-translation'] || '';
-              return eng && chn ? `${eng}\n${chn}` : '';
-            }).filter(Boolean);
-            if (sentLines.length) {
-              sentBlock = sentLines.join('\n\n');
-              examples = sentPairs.slice(0, 3).map((s) => (s['sentence'] || '').replace(/<[^>]+>/g, ''));
-            }
-          }
-
-          const examType = ec.exam_type || [];
-          if (examType.length) {
-            zhSummary = zhSummary ? `${examType.join(' / ')}  ${zhSummary}` : examType.join(' / ');
+          const relatedEntries = (sugData.data?.entries || []).slice(1, 5);
+          if (relatedEntries.length) {
+            const relatedLines = relatedEntries.map((e) => `${e.entry}  ${e.explain?.split('；')[0] || ''}`);
+            exchangeBlock = relatedLines.join('\n');
           }
         }
 
-        if (dictRes.status === 'fulfilled' && dictRes.value.ok) {
-          const data = await dictRes.value.json();
-          const entry = Array.isArray(data) ? data[0] : null;
-          if (entry) {
-            if (!phonetic) phonetic = entry.phonetic || (entry.phonetics || []).find((x) => x && x.text)?.text || '';
-            if (!phEn && !phAm) {
-              const phList = entry.phonetics || [];
-              const uk = phList.find((x) => /uk/i.test(x.audio || ''));
-              const us = phList.find((x) => /us/i.test(x.audio || ''));
-              phEn = uk?.text || '';
-              phAm = us?.text || '';
-            }
-            if (!etymologyBlock) {
-              const meanings = entry.meanings || [];
-              const etymologies = [];
-              for (const m of meanings) {
-                if (m.etymology) etymologies.push(m.etymology);
-                for (const d of (m.definitions || [])) {
-                  if (d.etymology) etymologies.push(d.etymology);
-                }
-              }
-              if (etymologies.length) etymologyBlock = etymologies.join('\n');
+        if (transRes.status === 'fulfilled' && transRes.value.ok) {
+          const transData = await transRes.value.json();
+          const translated = transData?.responseData?.translatedText?.trim();
+          if (translated && !partsBlock) {
+            partsBlock = translated;
+            zhSummary = translated;
+          }
+          const matches = transData?.matches || [];
+          if (matches.length > 1) {
+            const matchLines = matches.slice(1, 4).map((m) => `${m.segment}  ${m.translation}`).filter((l) => l.includes(word));
+            if (matchLines.length && !phraseBlock) {
+              phraseBlock = matchLines.join('\n');
             }
           }
         }
 
-        if (!partsBlock) {
-          try {
-            const sugRes = await fetchWithCorsProxy(`https://fanyi.baidu.com/sug?kw=${encodeURIComponent(word)}`);
-            if (sugRes) {
-              const sugData = await sugRes.json();
-              const items = (sugData.data || []).filter((d) => d.k?.toLowerCase() === word.toLowerCase());
-              if (items.length && items[0].v) {
-                partsBlock = items[0].v;
-                zhSummary = zhSummary || items[0].v;
-              }
-            }
-          } catch (_) {}
+        if (collocRes.status === 'fulfilled' && collocRes.value.ok) {
+          const collocData = await collocRes.value.json();
+          const words = Array.isArray(collocData) ? collocData.map((x) => x.word).filter((w) => w.length > 2).slice(0, 6) : [];
+          if (words.length && !phraseBlock) {
+            phraseBlock = words.join(' / ');
+          }
         }
 
         const sections = [];
@@ -759,10 +676,8 @@ constrain"></textarea></div>
         if (phAm) phLine.push(`美[${phAm}]`);
         if (phLine.length) sections.push(phLine.join('  '));
         if (partsBlock) sections.push(`常见释义\n${partsBlock}`);
-        if (sentBlock) sections.push(`例句\n${sentBlock}`);
         if (phraseBlock) sections.push(`词组\n${phraseBlock}`);
-        if (exchangeBlock) sections.push(`变形\n${exchangeBlock}`);
-        if (etymologyBlock) sections.push(`助记\n${etymologyBlock}`);
+        if (exchangeBlock) sections.push(`相关词\n${exchangeBlock}`);
         if (!sections.length) sections.push('暂无释义，请手动补充');
 
         return createCard({
