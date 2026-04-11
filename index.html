@@ -119,6 +119,9 @@
       display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 7px 10px; font-size: 12px;
       color: var(--muted); border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04);
     }
+    .badge-ai { color: #8be9fd; border-color: rgba(139,233,253,0.3); background: rgba(139,233,253,0.1); }
+    .badge-dict { color: #ffb86c; border-color: rgba(255,184,108,0.3); background: rgba(255,184,108,0.1); }
+    .card-meta { display: flex; gap: 8px; margin-bottom: 8px; }
     .study-front { font-size: clamp(20px, 4vw, 34px); font-weight: 800; line-height: 1.35; }
     .study-phonetic { font-size: 16px; font-weight: 400; color: var(--muted); margin-top: 6px; }
     .study-zh-summary { font-size: 15px; font-weight: 400; color: #a5c4f7; margin-top: 4px; }
@@ -893,7 +896,7 @@ constrain"></textarea></div>
         return createCard({
           front: word,
           back: sections.join('\n\n'),
-          tags: ['auto', 'word'],
+          tags: ['auto', 'word', 'dict'],
           phonetic: '',
           examples: [],
           zhSummary: zhTranslation,
@@ -913,7 +916,8 @@ constrain"></textarea></div>
         if (card.phAm) phLine.push(`美[${escapeHtml(card.phAm)}]`);
         const phHtml = phLine.length ? `<div class="study-phonetic">${phLine.join('  ')}</div>` : '';
         const zhHtml = card.zhSummary ? `<div class="study-zh-summary">${escapeHtml(card.zhSummary)}</div>` : '';
-        return `<div class="list-card"><h4>${escapeHtml(card.front)}${phHtml}${zhHtml}</h4><p>${escapeHtml(card.back)}</p></div>`;
+        const sourceBadge = card.tags?.includes('ai') ? '<span class="badge badge-ai">AI 生成</span>' : '<span class="badge badge-dict">词典 API</span>';
+        return `<div class="list-card"><h4>${escapeHtml(card.front)}${phHtml}${zhHtml}</h4><div class="card-meta">${sourceBadge}</div><p>${escapeHtml(card.back)}</p></div>`;
       }).join('');
     }
 
@@ -1134,7 +1138,8 @@ constrain"></textarea></div>
         if (card.phAm) phLine.push(`美[${escapeHtml(card.phAm)}]`);
         const phHtml = phLine.length ? `<div class="study-phonetic">${phLine.join('  ')}</div>` : '';
         const zhHtml = card.zhSummary ? `<div class="study-zh-summary">${escapeHtml(card.zhSummary)}</div>` : '';
-        return `<div class="list-card"><div class="row"><div><h4>${escapeHtml(card.front)}${phHtml}${zhHtml}</h4><p>${escapeHtml(card.back)}</p></div><div class="study-meta"><div class="badge">${cardStatusText(card)}</div><div class="badge">${formatInterval(card.intervalHours)}</div><div class="badge">到期：${formatDateTime(card.dueAt)}</div></div></div><div class="row"><p>标签：${escapeHtml((card.tags || []).join(', ') || '无')}</p><div class="mini-actions"><button onclick="editCard('${card.id}')">编辑</button><button onclick="resetCardProgress('${card.id}')">重学</button><button onclick="deleteCard('${card.id}')">删除</button></div></div></div>`;
+        const sourceBadge = card.tags?.includes('ai') ? '<span class="badge badge-ai">AI</span>' : (card.tags?.includes('dict') ? '<span class="badge badge-dict">词典</span>' : '');
+        return `<div class="list-card"><div class="row"><div><h4>${escapeHtml(card.front)}${phHtml}${zhHtml}</h4><p>${escapeHtml(card.back)}</p></div><div class="study-meta">${sourceBadge}<div class="badge">${cardStatusText(card)}</div><div class="badge">${formatInterval(card.intervalHours)}</div><div class="badge">到期：${formatDateTime(card.dueAt)}</div></div></div><div class="row"><p>标签：${escapeHtml((card.tags || []).join(', ') || '无')}</p><div class="mini-actions"><button onclick="editCard('${card.id}')">编辑</button><button onclick="resetCardProgress('${card.id}')">重学</button><button onclick="deleteCard('${card.id}')">删除</button></div></div></div>`;
       }).join('');
     }
 
