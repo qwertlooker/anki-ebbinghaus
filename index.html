@@ -942,12 +942,7 @@ constrain"></textarea></div>
 
     function renderStudyFront(card) {
       const word = escapeHtml(card.front || '');
-      const phLine = [];
-      if (card.phEn) phLine.push(`英[${escapeHtml(card.phEn)}]`);
-      if (card.phAm) phLine.push(`美[${escapeHtml(card.phAm)}]`);
-      const phHtml = phLine.length ? `<div class="study-phonetic">${phLine.join('  ')}</div>` : '';
-      const zhHtml = card.zhSummary ? `<div class="study-zh-summary">${escapeHtml(card.zhSummary)}</div>` : '';
-      return `${word}${phHtml}${zhHtml}`;
+      return word;
     }
 
     function renderStudyBack(card) {
